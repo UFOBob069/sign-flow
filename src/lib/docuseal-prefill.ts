@@ -1,5 +1,4 @@
 import {
-  formatCalendarDateSpanish,
   formatSignflowMonthLong,
   formatSignflowMonthSpanish,
   formatSignflowMonthYear,
@@ -147,10 +146,13 @@ function buildEnglish2026Prefill(input: BuildDocusealPrefillInput, dol: NonNulla
 function buildSpanish2026Prefill(input: BuildDocusealPrefillInput, dol: NonNullable<ReturnType<typeof parseIsoDateOnly>>): DocusealPrefillField[] {
   const today = getSignflowCalendarParts(input.sentAt ?? new Date());
   const F = RJL_SPANISH_2026_FIELD;
+  // DocuSeal field type is `date` — must be yyyy-MM-dd. Spanish prose (e.g. "28 de julio de 2026")
+  // is mis-parsed and can show as 07/01/2026.
+  const dateOfLossIso = `${dol.year}-${String(dol.month).padStart(2, "0")}-${String(dol.day).padStart(2, "0")}`;
 
   return [
     { name: F.clientName, default_value: input.clientName.trim(), readonly: true },
-    { name: F.dateOfLoss, default_value: formatCalendarDateSpanish(dol), readonly: true },
+    { name: F.dateOfLoss, default_value: dateOfLossIso, readonly: true },
     { name: F.todayDayNumber, default_value: String(today.day), readonly: true },
     { name: F.todayMonthSpanish, default_value: formatSignflowMonthSpanish(today), readonly: true },
   ];
