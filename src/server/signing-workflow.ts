@@ -52,6 +52,12 @@ export type CreateSigningRequestInput = {
   sendEmail: boolean;
   reminderEnabled: boolean;
   assignedTo: string | null;
+  /**
+   * Allow creating the request without any immediate SMS/email delivery — used
+   * when the signer will sign inline (e.g. embedded during an intake journey)
+   * and only the reminder schedule should follow up if they don't finish.
+   */
+  allowNoDelivery?: boolean;
 };
 
 export async function createLeadAndSigningRequest(
@@ -207,7 +213,7 @@ export async function createLeadAndSigningRequest(
     await appendSigningEvent({ signingRequestId: reqId, leadId, type: "email_sent", metadata: {} });
   }
 
-  if (!signingRequest.sentViaSms && !signingRequest.sentViaEmail) {
+  if (!input.allowNoDelivery && !signingRequest.sentViaSms && !signingRequest.sentViaEmail) {
     throw new Error("Select at least one delivery method (SMS or email).");
   }
 
