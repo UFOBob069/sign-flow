@@ -13,6 +13,81 @@ import { DEFAULT_OUTBOUND_DELIVERY } from "@/lib/outbound-delivery";
 import { postSigningResend } from "@/lib/post-signing-resend";
 import { StatusChip } from "@/components/sign-flow/status-chip";
 
+// Turn a raw signing event into a plain-English line for the Activity feed:
+// a short title, an optional detail sentence, and a tone that colors the dot.
+type EventTone = "info" | "success" | "warn" | "error";
+function describeEvent(ev: SigningEvent): { title: string; detail?: string; tone: EventTone } {
+  const m = ev.metadata ?? {};
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+  const isReminder = str(m.kind) === "reminder";
+
+  switch (ev.type) {
+    case "created": {
+      const via = str(m.actor) === "intake-engine" ? "from the intake form" : "by staff";
+      const tpl = num(m.templateId);
+      return { title: "Request created", detail: `Created ${via}${tpl ? ` · template #${tpl}` : ""}.`, tone: "info" };
+    }
+    case "sms_sent":
+      return {
+        title: isReminder ? "Reminder sent by text" : "Text message sent",
+        detail: isReminder ? "A follow-up text nudged the client to sign." : "The signing link was texted to the client.",
+        tone: "info",
+      };
+    case "email_sent":
+      return {
+        title: isReminder ? "Reminder sent by email" : "Email sent",
+        detail: isReminder ? "A follow-up email nudged the client to sign." : "The signing link was emailed to the client.",
+        tone: "info",
+      };
+    case "reminder_sent": {
+      const count = num(m.count);
+      const channels = [m.sms ? "text" : null, m.email ? "email" : null].filter(Boolean).join(" & ");
+      return {
+        title: count ? `Reminder #${count} sent` : "Reminder sent",
+        detail: channels ? `Sent via ${channels}.` : undefined,
+        tone: "info",
+      };
+    }
+    case "viewed":
+      return { title: "Client opened the document", detail: "The client viewed the agreement.", tone: "info" };
+    case "signed":
+      return { title: "Client signed", detail: "The agreement was signed.", tone: "success" };
+    case "downloaded":
+      return { title: "Signed PDF downloaded", tone: "success" };
+    case "dropbox_saved":
+      return { title: "Saved to Dropbox", detail: str(m.path), tone: "success" };
+    case "slack_posted":
+      return { title: "Posted to Slack", tone: "success" };
+    case "synced": {
+      const action = str(m.action)?.replace(/_/g, " ");
+      return { title: "Synced", detail: action ? `${action}.` : undefined, tone: "info" };
+    }
+    case "cancelled":
+      return { title: "Request cancelled", tone: "warn" };
+    case "deleted":
+      return { title: "Request deleted", tone: "warn" };
+    case "failed": {
+      const step = str(m.step)?.replace(/_/g, " ");
+      const error = str(m.error);
+      return {
+        title: step ? `Failed: ${step}` : "Something failed",
+        detail: error,
+        tone: "error",
+      };
+    }
+    default:
+      return { title: String(ev.type).replace(/_/g, " "), tone: "info" };
+  }
+}
+
+const EVENT_DOT: Record<EventTone, string> = {
+  info: "bg-slate-300",
+  success: "bg-emerald-500",
+  warn: "bg-amber-500",
+  error: "bg-red-500",
+};
+
 export default function SigningRequestDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -378,21 +453,31 @@ export default function SigningRequestDetailPage() {
 
       <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">Activity</h2>
-        <ul className="mt-4 space-y-3">
-          {events.map((ev) => (
-            <li key={ev.id} className="border-b border-slate-100 pb-3 text-sm last:border-0">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="font-medium capitalize text-slate-900">{ev.type.replace(/_/g, " ")}</span>
-                <span className="text-xs text-slate-500">{formatSignflowTimestamp(ev.timestamp)}</span>
-              </div>
-              {Object.keys(ev.metadata).length ? (
-                <pre className="mt-1 max-h-24 overflow-auto rounded-lg bg-slate-50 p-2 text-[11px] text-slate-700">
-                  {JSON.stringify(ev.metadata, null, 2)}
-                </pre>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        {events.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500">No activity yet.</p>
+        ) : (
+          <ul className="mt-4 space-y-4">
+            {events.map((ev) => {
+              const { title, detail, tone } = describeEvent(ev);
+              return (
+                <li key={ev.id} className="flex gap-3 text-sm">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${EVENT_DOT[tone]}`} aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                      <span className="font-medium text-slate-900">{title}</span>
+                      <span className="text-xs text-slate-500">{formatSignflowTimestamp(ev.timestamp)}</span>
+                    </div>
+                    {detail ? (
+                      <p className={`mt-0.5 break-words ${tone === "error" ? "text-red-600" : "text-slate-500"}`}>
+                        {detail}
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
