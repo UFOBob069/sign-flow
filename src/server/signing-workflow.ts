@@ -673,7 +673,19 @@ export async function runReminderForRequest(
   let smsSent = false;
   let emailSent = false;
 
-  if (req.phone?.trim() && req.sentViaSms && outbound.signingSmsEnabled) {
+  // Which channels to remind on. Normally we follow up on the channel the
+  // request was originally delivered on. Intake/inline-signing requests are
+  // created with no initial send (sentViaSms/sentViaEmail both false) but with
+  // reminders enabled — the client got the signing link inline and just didn't
+  // finish. For those, fall back to every channel the client can be reached on,
+  // so the 1→2→3 reminder cadence actually runs instead of silently no-op-ing.
+  const hadInitialDelivery = req.sentViaSms || req.sentViaEmail;
+  const remindViaSms =
+    Boolean(req.phone?.trim()) && outbound.signingSmsEnabled && (req.sentViaSms || !hadInitialDelivery);
+  const remindViaEmail =
+    Boolean(req.email) && outbound.signingEmailEnabled && (req.sentViaEmail || !hadInitialDelivery);
+
+  if (remindViaSms && req.phone) {
     try {
       await sendSms(
         req.phone,
@@ -696,7 +708,7 @@ export async function runReminderForRequest(
     }
   }
 
-  if (req.email && req.sentViaEmail && outbound.signingEmailEnabled) {
+  if (remindViaEmail && req.email) {
     const { subject, text, html } = reminderEmailFromSettings(
       appSettings,
       req.clientName,
