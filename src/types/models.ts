@@ -43,6 +43,7 @@ export type SigningEventType =
   | "dropbox_saved"
   | "slack_posted"
   | "reminder_sent"
+  | "reminders_stopped"
   | "synced"
   | "cancelled"
   | "deleted"

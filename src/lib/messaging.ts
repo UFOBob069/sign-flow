@@ -9,7 +9,7 @@ export const DEFAULT_COMMUNICATION_TEMPLATES: CommunicationTemplates = {
   firmName: FIRM,
   firmLogoUrl: "",
   signingSmsTemplate:
-    "Hi {{clientName}}, this is {{firm}}. Please review and sign your documents here: {{url}}. Reply STOP to opt out.",
+    "Hi {{clientName}}, this is {{firm}}. Please review and sign your documents here: {{url}}. Reply STOP to stop reminder texts (your signing link stays active).",
   signingEmailSubjectTemplate: "Documents to Review and Sign",
   signingEmailBodyTemplate: `Hi {{clientName}},
 
@@ -24,7 +24,7 @@ Thank you.
 
 Need help? Reply to this email or contact your attorney directly.`,
   reminderSmsTemplate:
-    "Reminder from {{firm}} for {{clientName}}: please complete your documents here: {{url}}. Reply STOP to opt out.",
+    "Reminder from {{firm}} for {{clientName}}: please complete your documents here: {{url}}. Reply STOP to stop reminder texts (your signing link stays active).",
   reminderEmailSubjectTemplate: "Reminder: documents awaiting your signature",
   reminderEmailBodyTemplate: `Hi {{clientName}},
 
@@ -34,7 +34,7 @@ This is a friendly reminder to review and sign your documents — use the button
 
 — {{firm}}`,
   signingSmsTemplateEs:
-    "Hola {{clientName}}, le escribimos de {{firm}}. Por favor revise y firme sus documentos aquí: {{url}}. Responda ALTO para cancelar.",
+    "Hola {{clientName}}, le escribimos de {{firm}}. Por favor revise y firme sus documentos aquí: {{url}}. Responda ALTO para detener recordatorios (el enlace sigue activo).",
   signingEmailSubjectTemplateEs: "Documentos para revisar y firmar",
   signingEmailBodyTemplateEs: `Hola {{clientName}},
 
@@ -49,7 +49,7 @@ Gracias.
 
 ¿Necesita ayuda? Responda a este correo o comuníquese con su abogado.`,
   reminderSmsTemplateEs:
-    "Recordatorio de {{firm}} para {{clientName}}: complete sus documentos aquí: {{url}}. Responda ALTO para cancelar.",
+    "Recordatorio de {{firm}} para {{clientName}}: complete sus documentos aquí: {{url}}. Responda ALTO para detener recordatorios (el enlace sigue activo).",
   reminderEmailSubjectTemplateEs: "Recordatorio: documentos pendientes de firma",
   reminderEmailBodyTemplateEs: `Hola {{clientName}},
 

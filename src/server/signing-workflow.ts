@@ -36,6 +36,7 @@ import { sendTransactionalEmail } from "@/services/email-delivery";
 import { sendSms } from "@/services/quo-service";
 import { appendSigningEvent } from "@/services/signing-events";
 import { isActiveSigningRequest, isCancelledSigningRequest } from "@/lib/signing-request-active";
+import { phonesMatch } from "@/lib/phone";
 import type { HipaaFormPrefill, Lead, LeadStatus, SigningRequest, SupportedLanguage } from "@/types/models";
 
 export type CreateSigningRequestInput = {
@@ -273,6 +274,80 @@ export async function cancelSigningRequest(
   });
 
   return req;
+}
+
+export type StopRemindersSource = "client_sms_stop" | "staff";
+
+/**
+ * Turn off automated reminders only. Signing link / request stays active
+ * so the client can still open and sign.
+ */
+export async function stopRemindersForRequest(
+  signingRequestId: string,
+  source: StopRemindersSource,
+  meta?: { actor?: string; fromPhone?: string; messageBody?: string },
+): Promise<SigningRequest> {
+  const store = getSignFlowStore();
+  const req = await store.getSigningRequest(signingRequestId);
+  if (!req) throw new Error("Not found");
+  if (isCancelledSigningRequest(req)) throw new Error("This signing request is cancelled.");
+  if (req.status === "completed" || req.status === "signed") {
+    throw new Error("Reminders are already finished for a completed request.");
+  }
+
+  if (!req.reminderEnabled && !req.nextReminderAt) {
+    return req;
+  }
+
+  const t = nowIso();
+  req.reminderEnabled = false;
+  req.nextReminderAt = null;
+  req.lastActivityAt = t;
+  req.updatedAt = t;
+  await store.upsertSigningRequest(req);
+
+  await appendSigningEvent({
+    signingRequestId: req.id,
+    leadId: req.leadId,
+    type: "reminders_stopped",
+    metadata: {
+      source,
+      actor: meta?.actor ?? null,
+      fromPhone: meta?.fromPhone ?? null,
+      messageBody: meta?.messageBody ?? null,
+      signingLinkRemainsActive: true,
+    },
+  });
+
+  return req;
+}
+
+/** Match inbound STOP (or staff) phone to active requests still receiving reminders. */
+export async function stopRemindersByPhone(
+  fromPhone: string,
+  source: StopRemindersSource,
+  meta?: { messageBody?: string },
+): Promise<SigningRequest[]> {
+  const store = getSignFlowStore();
+  const items = await store.listSigningRequests();
+  const targets = items.filter(
+    (r) =>
+      isActiveSigningRequest(r) &&
+      r.reminderEnabled &&
+      (r.status === "sent" || r.status === "viewed" || r.status === "draft") &&
+      phonesMatch(r.phone, fromPhone),
+  );
+
+  const updated: SigningRequest[] = [];
+  for (const r of targets) {
+    updated.push(
+      await stopRemindersForRequest(r.id, source, {
+        fromPhone,
+        messageBody: meta?.messageBody,
+      }),
+    );
+  }
+  return updated;
 }
 
 export async function purgeSigningRequest(signingRequestId: string): Promise<void> {

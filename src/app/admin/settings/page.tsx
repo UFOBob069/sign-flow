@@ -91,6 +91,21 @@ export default function AdminSettingsPage() {
       </div>
 
       <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm">
+        <div className="text-sm font-semibold text-slate-900">Quo SMS webhooks (STOP)</div>
+        <p className="mt-2 text-sm text-slate-700">
+          Point a Quo <code className="rounded bg-slate-100 px-1 text-xs">message.received</code> webhook to:{" "}
+          <code className="rounded bg-slate-100 px-1 text-xs">https://your-host/api/webhooks/quo</code>
+        </p>
+        <p className="mt-2 text-xs text-slate-600">
+          When a client replies <strong>STOP</strong> (or Spanish <strong>ALTO</strong>), Sign Flow turns off automated
+          reminders only — the signing link stays active. Optional: set <code>QUO_WEBHOOK_SECRET</code> to the signing
+          secret Quo shows when you create the webhook (often starts with <code>whsec_</code>; paste it exactly either
+          way). Also update SMS templates under Messages if they still say “opt out” without explaining the link stays
+          active.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm">
         <div className="text-sm font-semibold text-slate-900">DocuSeal webhooks</div>
         <p className="mt-2 text-sm text-slate-700">
           Point DocuSeal webhooks to:{" "}

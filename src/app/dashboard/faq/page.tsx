@@ -171,7 +171,23 @@ const SECTIONS: FaqSection[] = [
     items: [
       {
         question: "Does Sign Flow send reminders?",
-        answer: "Yes, reminder activity is visible in the dashboard.",
+        answer: "Yes, reminder activity is visible on each request. Reminders only go out between 7:00 AM and 8:00 PM US Central.",
+      },
+      {
+        question: "What happens if a client texts STOP?",
+        answer: (
+          <>
+            <p>
+              Sign Flow turns off <strong>automated reminders only</strong>. The signing link stays active so the client can
+              still open and sign. On the request page you&apos;ll see Reminders marked as stopped, and an activity row for
+              the STOP.
+            </p>
+            <p className="mt-2">
+              Staff can also use <strong>Stop reminders</strong> on the request without cancelling it. Cancelling a request is
+              separate and stops reminders plus marks the request cancelled.
+            </p>
+          </>
+        ),
       },
       {
         question: "How do I know when the last activity occurred?",

@@ -65,6 +65,21 @@ function describeEvent(ev: SigningEvent): { title: string; detail?: string; tone
     }
     case "cancelled":
       return { title: "Request cancelled", tone: "warn" };
+    case "reminders_stopped": {
+      const source = str(m.source);
+      if (source === "client_sms_stop") {
+        return {
+          title: "Reminders stopped (client texted STOP)",
+          detail: "Automated reminder texts are off. The signing link is still active.",
+          tone: "warn",
+        };
+      }
+      return {
+        title: "Reminders stopped by staff",
+        detail: "Automated reminders are off. The signing link is still active.",
+        tone: "warn",
+      };
+    }
     case "deleted":
       return { title: "Request deleted", tone: "warn" };
     case "failed": {
@@ -100,6 +115,7 @@ export default function SigningRequestDetailPage() {
   const [resendBusy, setResendBusy] = useState<"sms" | "email" | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [stopRemindersBusy, setStopRemindersBusy] = useState(false);
   const [purgeBusy, setPurgeBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [outbound, setOutbound] = useState<OutboundDeliverySettings>(DEFAULT_OUTBOUND_DELIVERY);
@@ -260,8 +276,24 @@ export default function SigningRequestDetailPage() {
               <dd className="text-slate-800">{item.sentAt ? formatSignflowDateTime(item.sentAt) : "—"}</dd>
             </div>
             <div>
+              <dt className="text-xs font-medium uppercase text-slate-500">Reminders</dt>
+              <dd className="text-slate-800">
+                {isCancelled || item.status === "completed" || item.status === "signed"
+                  ? "—"
+                  : item.reminderEnabled
+                    ? "On"
+                    : "Stopped — signing link still active"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-xs font-medium uppercase text-slate-500">Next reminder</dt>
-              <dd className="text-slate-800">{item.nextReminderAt ? formatSignflowShortDateTime(item.nextReminderAt) : "—"}</dd>
+              <dd className="text-slate-800">
+                {item.reminderEnabled && item.nextReminderAt
+                  ? formatSignflowShortDateTime(item.nextReminderAt)
+                  : item.reminderEnabled
+                    ? "—"
+                    : "None (reminders stopped)"}
+              </dd>
             </div>
           </dl>
           {item.signingUrl ? (
@@ -354,6 +386,46 @@ export default function SigningRequestDetailPage() {
           >
             Re-sync to Dropbox
           </button>
+          {!isCancelled && item.status !== "completed" && item.status !== "signed" && item.reminderEnabled ? (
+            <button
+              type="button"
+              disabled={stopRemindersBusy}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    `Stop automated reminders for ${item.clientName}? The signing link will stay active so they can still sign.`,
+                  )
+                ) {
+                  return;
+                }
+                setFeedback(null);
+                setStopRemindersBusy(true);
+                const res = await fetch(`/api/signing-requests/${id}/stop-reminders`, {
+                  method: "POST",
+                  credentials: "include",
+                });
+                setStopRemindersBusy(false);
+                if (!res.ok) {
+                  const j = (await res.json().catch(() => null)) as { error?: string } | null;
+                  setFeedback({ ok: false, text: j?.error ?? "Could not stop reminders." });
+                  return;
+                }
+                setFeedback({
+                  ok: true,
+                  text: "Reminders stopped. Signing link remains active.",
+                });
+                void refresh();
+              }}
+            >
+              {stopRemindersBusy ? "Stopping reminders…" : "Stop reminders"}
+            </button>
+          ) : null}
+          {!isCancelled && item.status !== "completed" && item.status !== "signed" && !item.reminderEnabled ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Reminders are stopped (client STOP text and/or staff). The signing link is still active.
+            </p>
+          ) : null}
           {!isCancelled && item.status !== "completed" ? (
             <button
               type="button"
