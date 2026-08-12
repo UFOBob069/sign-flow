@@ -60,29 +60,29 @@ const SECTIONS: FaqSection[] = [
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>English Intake Contract</li>
             <li>Spanish Intake Contract</li>
-            <li>SAR (release) — one DocuSeal template per person; name must include “SAR”</li>
+            <li>One-time forms — SAR (name includes “SAR”) or Disbursement (name includes “Disbursement”)</li>
             <li>HIPAA form — English only; name must include “HIPAA”</li>
           </ul>
         ),
       },
       {
-        question: "How do I send an SAR (release)?",
+        question: "How do I send a one-time form (SAR or Disbursement)?",
         answer: (
           <>
             <p className="mb-2">
               Use{" "}
-              <Link href="/dashboard/send/sar" className="font-medium text-[color:var(--brand-navy)] underline underline-offset-2">
-                Send SAR
-              </Link>{" "}
-              (not the regular send form). That page only lists SAR templates and keeps intake contracts out of the
-              dropdown.
+              <Link href="/dashboard/send/onetime" className="font-medium text-[color:var(--brand-navy)] underline underline-offset-2">
+                One-time
+              </Link>
+              . That page lists SAR and Disbursement templates and keeps contracts/HIPAA out of the dropdown.
             </p>
             <ol className="mt-2 list-decimal space-y-1 pl-5">
-              <li>Create the person&apos;s SAR template in DocuSeal (name must include &quot;SAR&quot;)</li>
-              <li>Open Send SAR and select that template</li>
+              <li>Create the person&apos;s template in DocuSeal (name must include &quot;SAR&quot; or &quot;Disbursement&quot;)</li>
+              <li>Open One-time and select that template</li>
               <li>Enter the client&apos;s name (used in SMS and on the dashboard)</li>
               <li>Enter phone with <code className="rounded bg-slate-100 px-1 text-xs">+1</code> and send</li>
-              <li>After a successful send, Sign Flow archives the template in DocuSeal so it won&apos;t clutter future lists</li>
+              <li>After a successful send, Sign Flow archives the template in DocuSeal</li>
+              <li>Disbursement: client completes signature and date on the document</li>
             </ol>
           </>
         ),

@@ -66,15 +66,28 @@ export function isSarReleaseTemplate(templateName: string): boolean {
   return /\bsar\b/i.test(templateName);
 }
 
+/** Disbursement — one-time per person; name should include “Disbursement”. */
+export function isDisbursementTemplate(templateName: string): boolean {
+  if (isDeprecatedDocusealTemplate(templateName)) return false;
+  if (isSarReleaseTemplate(templateName)) return false;
+  return /\bdisbursement\b/i.test(templateName);
+}
+
+/** One-time DocuSeal templates (SAR, Disbursement, …) — archived after a successful send. */
+export function isOneTimeTemplate(templateName: string): boolean {
+  return isSarReleaseTemplate(templateName) || isDisbursementTemplate(templateName);
+}
+
 /** RJL HIPAA Form — English only. */
 export function isRjlHipaaTemplate(templateName: string): boolean {
   if (isDeprecatedDocusealTemplate(templateName)) return false;
-  if (isSarReleaseTemplate(templateName)) return false;
+  if (isOneTimeTemplate(templateName)) return false;
   return /\bhipaa\b/i.test(templateName);
 }
 
 export function detectSigningFormKind(templateName: string): SigningFormKind {
   if (isSarReleaseTemplate(templateName)) return "sar";
+  if (isDisbursementTemplate(templateName)) return "disbursement";
   if (isRjlHipaaTemplate(templateName)) return "hipaa";
   return "contract";
 }
@@ -99,7 +112,9 @@ export function isVisibleDocusealTemplate(t: { name: string; archivedAt?: string
 export function filterContractTemplates<T extends { name: string; archivedAt?: string | null }>(templates: T[]): T[] {
   return templates.filter(
     (t) =>
-      isVisibleDocusealTemplate(t) && !isSarReleaseTemplate(t.name) && !isRjlHipaaTemplate(t.name),
+      isVisibleDocusealTemplate(t) &&
+      !isOneTimeTemplate(t.name) &&
+      !isRjlHipaaTemplate(t.name),
   );
 }
 
@@ -108,6 +123,11 @@ export const filterIntakeTemplates = filterContractTemplates;
 
 export function filterSarReleaseTemplates<T extends { name: string; archivedAt?: string | null }>(templates: T[]): T[] {
   return templates.filter((t) => isVisibleDocusealTemplate(t) && isSarReleaseTemplate(t.name));
+}
+
+/** SAR releases + Disbursement (and future one-time templates). */
+export function filterOneTimeTemplates<T extends { name: string; archivedAt?: string | null }>(templates: T[]): T[] {
+  return templates.filter((t) => isVisibleDocusealTemplate(t) && isOneTimeTemplate(t.name));
 }
 
 export function filterHipaaTemplates<T extends { name: string; archivedAt?: string | null }>(templates: T[]): T[] {
@@ -187,6 +207,10 @@ export function resolveClientNameForSigningRequest(
 export function buildDocusealPrefillFields(input: BuildDocusealPrefillInput): DocusealPrefillField[] {
   if (isSarReleaseTemplate(input.templateName)) {
     return buildSarReleasePrefill(input);
+  }
+  // Disbursement templates typically have unnamed signature + date fields — client completes both.
+  if (isDisbursementTemplate(input.templateName)) {
+    return [];
   }
   if (isRjlHipaaTemplate(input.templateName) && input.hipaaPrefill) {
     return buildHipaaDocusealPrefillFields(input.hipaaPrefill, input.sentAt);

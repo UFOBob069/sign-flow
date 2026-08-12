@@ -23,7 +23,7 @@ import {
   buildDocusealPrefillFields,
   detectSigningFormKind,
   isRjlHipaaTemplate,
-  isSarReleaseTemplate,
+  isOneTimeTemplate,
   resolveClientNameForSigningRequest,
   templateRequiresDateOfLoss,
   validateHipaaPrefill,
@@ -224,7 +224,7 @@ export async function createLeadAndSigningRequest(
   await store.upsertLead(lead);
   await store.upsertSigningRequest(signingRequest);
 
-  if (isSarReleaseTemplate(template.name)) {
+  if (isOneTimeTemplate(template.name)) {
     try {
       await archiveTemplate(input.templateId);
       await appendSigningEvent({
@@ -238,7 +238,7 @@ export async function createLeadAndSigningRequest(
         signingRequestId: reqId,
         leadId,
         type: "failed",
-        metadata: { step: "archive_sar_template", templateId: input.templateId, error: String(e) },
+        metadata: { step: "archive_onetime_template", templateId: input.templateId, error: String(e) },
       });
     }
   }

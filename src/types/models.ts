@@ -49,7 +49,7 @@ export type SigningEventType =
   | "deleted"
   | "failed";
 
-export type SigningFormKind = "contract" | "sar" | "hipaa";
+export type SigningFormKind = "contract" | "sar" | "hipaa" | "disbursement";
 
 export type HipaaFormPrefill = {
   lastName: string;

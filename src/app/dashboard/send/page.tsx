@@ -7,9 +7,9 @@ const SEND_TYPES = [
     description: "English or Spanish intake contracts. Pre-fills client name, date of loss, and today’s date.",
   },
   {
-    href: "/dashboard/send/sar",
-    title: "SAR release",
-    description: "One-time release per person. Template is archived in DocuSeal after a successful send.",
+    href: "/dashboard/send/onetime",
+    title: "One-time form",
+    description: "SAR releases, disbursement agreements, and other per-person templates. Archived in DocuSeal after send.",
   },
   {
     href: "/dashboard/send/hipaa",
