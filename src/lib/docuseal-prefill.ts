@@ -11,7 +11,7 @@ import {
   hipaaClientDisplayName,
   validateHipaaPrefill,
 } from "@/lib/hipaa-prefill";
-import type { HipaaFormPrefill, SigningFormKind } from "@/types/models";
+import type { HipaaFormPrefill, SigningFormKind, SupportedLanguage } from "@/types/models";
 
 export type { HipaaFormPrefill };
 export { validateHipaaPrefill, hipaaClientDisplayName };
@@ -98,6 +98,14 @@ export function templateRequiresDateOfLoss(templateName: string): boolean {
 
 export function templateShowsLanguageChoice(templateName: string): boolean {
   return detectSigningFormKind(templateName) === "contract";
+}
+
+/** SMS/email language implied by an English or Spanish contract template name. */
+export function languageFromContractTemplate(templateName: string): SupportedLanguage | null {
+  if (isDeprecatedDocusealTemplate(templateName)) return null;
+  if (isRjlSpanish2026Template(templateName) || /\bspanish\b/i.test(templateName)) return "es";
+  if (isRjlEnglish2026Template(templateName) || /\benglish\b/i.test(templateName)) return "en";
+  return null;
 }
 
 /** Retired templates kept in DocuSeal for records — hidden from Sign Flow pickers. */

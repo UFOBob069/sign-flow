@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, startTransition } from "react";
-import { filterContractTemplates, isRjlSpanish2026Template, templateRequiresDateOfLoss } from "@/lib/docuseal-prefill";
+import { filterContractTemplates, languageFromContractTemplate, templateRequiresDateOfLoss } from "@/lib/docuseal-prefill";
 import type { DocuSealTemplateSummary, OutboundDeliverySettings } from "@/types/models";
 import { DEFAULT_OUTBOUND_DELIVERY } from "@/lib/outbound-delivery";
 
@@ -79,9 +79,9 @@ export default function SendContractPage() {
   const needsDateOfLoss = selectedTemplate ? templateRequiresDateOfLoss(selectedTemplate.name) : false;
 
   useEffect(() => {
-    if (selectedTemplate && isRjlSpanish2026Template(selectedTemplate.name)) {
-      setLanguage("es");
-    }
+    if (!selectedTemplate) return;
+    const fromContract = languageFromContractTemplate(selectedTemplate.name);
+    if (fromContract) setLanguage(fromContract);
   }, [selectedTemplate?.id, selectedTemplate?.name]);
 
   return (
@@ -269,7 +269,10 @@ export default function SendContractPage() {
         )}
 
         <div>
-          <label className="text-sm font-medium text-slate-900">Language</label>
+          <label className="text-sm font-medium text-slate-900">SMS language</label>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Defaults to match the selected contract. Also used for email. You can change it if needed.
+          </p>
           <div className="mt-2 flex gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="lang" checked={language === "en"} onChange={() => setLanguage("en")} />
