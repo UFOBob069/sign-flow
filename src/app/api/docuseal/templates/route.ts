@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession } from "@/lib/auth/firm-session";
 import { docusealAdminTemplateUrl, ensureHttpUrlBase, listTemplates } from "@/services/docuseal-client";
 import { isVisibleDocusealTemplate } from "@/lib/docuseal-prefill";
+import { getFirmDocusealConnection } from "@/lib/firms";
 import type { DocuSealTemplateSummary } from "@/types/models";
 
 export async function GET() {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const rows = await listTemplates();
-    const adminBase = process.env.DOCUSEAL_ADMIN_BASE_URL?.trim();
+    const conn = await getFirmDocusealConnection(firmId);
+    const rows = await listTemplates(conn);
+    const adminBase = conn.adminBaseUrl?.trim() || process.env.DOCUSEAL_ADMIN_BASE_URL?.trim();
     const items: DocuSealTemplateSummary[] = rows
       .filter((t) => isVisibleDocusealTemplate({ name: t.name, archivedAt: t.archived_at ?? null }))
       .map((t) => ({
@@ -23,7 +26,7 @@ export async function GET() {
       updatedAt: t.updated_at ?? null,
       folderName: t.folder_name ?? null,
       adminUrl:
-        docusealAdminTemplateUrl(t.id) ??
+        docusealAdminTemplateUrl(t.id, conn) ??
         (adminBase ? `${ensureHttpUrlBase(adminBase)}/templates/${t.id}` : null),
       }));
     return NextResponse.json({ items });

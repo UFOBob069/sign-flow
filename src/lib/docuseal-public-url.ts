@@ -2,10 +2,10 @@ import { docusealBaseUrl, ensureHttpUrlBase } from "@/services/docuseal-client";
 import type { SigningRequest } from "@/types/models";
 
 /** Public DocuSeal web origin (signing links, PDF downloads). Not the /api mount. */
-export function docusealPublicBaseUrl(): string {
-  const admin = process.env.DOCUSEAL_ADMIN_BASE_URL?.trim();
+export function docusealPublicBaseUrl(conn?: { apiUrl?: string | null; adminBaseUrl?: string | null }): string {
+  const admin = conn?.adminBaseUrl?.trim() || process.env.DOCUSEAL_ADMIN_BASE_URL?.trim();
   if (admin) return ensureHttpUrlBase(admin);
-  return docusealBaseUrl().replace(/\/api\/?$/i, "");
+  return docusealBaseUrl(conn).replace(/\/api\/?$/i, "");
 }
 
 const SIGNING_PATH = /\/s\/[A-Za-z0-9_-]+/;
@@ -17,8 +17,9 @@ const SIGNING_PATH = /\/s\/[A-Za-z0-9_-]+/;
 export function normalizeDocusealPublicUrl(
   url: string | null | undefined,
   slug?: string | null,
+  conn?: { apiUrl?: string | null; adminBaseUrl?: string | null },
 ): string | null {
-  const base = docusealPublicBaseUrl();
+  const base = docusealPublicBaseUrl(conn);
   const slugToken = slug?.trim().replace(/^\/s\//, "").replace(/^\/+|\/+$/g, "");
   if (slugToken) return `${base}/s/${slugToken}`;
 
@@ -42,10 +43,13 @@ export function normalizeDocusealPublicUrl(
   }
 }
 
-export function normalizeSigningRequestDocusealUrls(req: SigningRequest): SigningRequest {
-  const signingUrl = normalizeDocusealPublicUrl(req.signingUrl);
-  const signedPdfUrl = normalizeDocusealPublicUrl(req.signedPdfUrl);
-  const auditCertificateUrl = normalizeDocusealPublicUrl(req.auditCertificateUrl);
+export function normalizeSigningRequestDocusealUrls(
+  req: SigningRequest,
+  conn?: { apiUrl?: string | null; adminBaseUrl?: string | null },
+): SigningRequest {
+  const signingUrl = normalizeDocusealPublicUrl(req.signingUrl, undefined, conn);
+  const signedPdfUrl = normalizeDocusealPublicUrl(req.signedPdfUrl, undefined, conn);
+  const auditCertificateUrl = normalizeDocusealPublicUrl(req.auditCertificateUrl, undefined, conn);
   if (
     signingUrl === req.signingUrl &&
     signedPdfUrl === req.signedPdfUrl &&

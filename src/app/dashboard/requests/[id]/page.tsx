@@ -112,6 +112,7 @@ export default function SigningRequestDetailPage() {
   const [events, setEvents] = useState<SigningEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
+  const [smsFailedBanner, setSmsFailedBanner] = useState(false);
   const [resendBusy, setResendBusy] = useState<"sms" | "email" | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -183,6 +184,13 @@ export default function SigningRequestDetailPage() {
     })();
   }, [fetchDetail]);
 
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("sms") !== "failed") return;
+    setSmsFailedBanner(true);
+    window.history.replaceState(null, "", `/dashboard/requests/${id}`);
+  }, [id]);
+
   if (loading && !item) {
     return null;
   }
@@ -213,6 +221,12 @@ export default function SigningRequestDetailPage() {
         <StatusChip status={item.status as SigningStatus} />
       </div>
 
+      {smsFailedBanner ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          The signing link was created, but SMS did not send. Use <strong>Retry SMS</strong> below — do not send the
+          contract again.
+        </div>
+      ) : null}
       {feedback ? (
         <div
           className={`rounded-xl border p-3 text-sm ${
@@ -322,7 +336,10 @@ export default function SigningRequestDetailPage() {
               const out = await postSigningResend(id, { sms: true, email: false });
               setResendBusy(null);
               setFeedback(out.ok ? { ok: true, text: "SMS resent." } : { ok: false, text: out.error });
-              if (out.ok) void refresh();
+              if (out.ok) {
+                setSmsFailedBanner(false);
+                void refresh();
+              }
             }}
           >
             {resendBusy === "sms" ? "Sending SMS…" : "Retry SMS"}

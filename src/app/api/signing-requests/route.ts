@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSignFlowStore } from "@/lib/db";
 import { isFirestoreNotProvisionedError } from "@/lib/db/firestore-errors";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession } from "@/lib/auth/firm-session";
+import { belongsToFirm } from "@/lib/firm-scope";
 import { mergeOutboundDelivery } from "@/lib/outbound-delivery";
 import { normalizeSigningRequestForDisplay } from "@/lib/signing-request-active";
 import { processDueReminders } from "@/server/reminder-processor";
@@ -82,15 +83,19 @@ const postSchema = z.object({
 });
 
 export async function GET() {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const store = getSignFlowStore();
   try {
-    const [itemsRaw, appSettings] = await Promise.all([store.listSigningRequests(), store.getAppSettings()]);
-    const items = itemsRaw.map(normalizeSigningRequestForDisplay);
+    const [itemsRaw, appSettings] = await Promise.all([
+      store.listSigningRequests(),
+      store.getAppSettings(firmId),
+    ]);
+    const items = itemsRaw.filter((r) => belongsToFirm(r, firmId)).map(normalizeSigningRequestForDisplay);
     const leadIds = [...new Set(items.map((r) => r.leadId))];
     const leads = await store.getLeadsByIds(leadIds);
     const leadsById = Object.fromEntries(leads.map((l) => [l.id, l]));
@@ -122,8 +127,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   let actor: { sub: string; name: string };
+  let firmId: string;
   try {
-    actor = await requireSessionUser();
+    ({ user: actor, firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -144,7 +150,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Email is required when email delivery is selected." }, { status: 400 });
   }
 
-  const appSettings = await getSignFlowStore().getAppSettings();
+  const appSettings = await getSignFlowStore().getAppSettings(firmId);
   const outbound = mergeOutboundDelivery(appSettings);
   if (parsed.data.sendSms && !outbound.signingSmsEnabled) {
     return NextResponse.json(
@@ -160,7 +166,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { lead, signingRequest } = await createLeadAndSigningRequest(
+    const { lead, signingRequest, deliveryWarning } = await createLeadAndSigningRequest(
       {
         clientName: parsed.data.clientName?.trim() || "",
         phone,
@@ -176,10 +182,15 @@ export async function POST(req: Request) {
         sendEmail: parsed.data.sendEmail,
         reminderEnabled: parsed.data.reminderEnabled,
         assignedTo: parsed.data.assignedTo ?? null,
+        firmId,
       },
       actor,
     );
-    return NextResponse.json({ item: normalizeSigningRequestForDisplay(signingRequest), lead });
+    return NextResponse.json({
+      item: normalizeSigningRequestForDisplay(signingRequest),
+      lead,
+      ...(deliveryWarning ? { warning: deliveryWarning } : {}),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed";
     return NextResponse.json({ error: msg }, { status: 400 });

@@ -1,4 +1,5 @@
-import type { AppSettings, Lead, SigningEvent, SigningRequest } from "@/types/models";
+import type { AppSettings, Firm, FirmSecrets, Lead, SigningEvent, SigningRequest } from "@/types/models";
+import { DEFAULT_FIRM_ID, LEGACY_SETTINGS_ID, belongsToFirm } from "@/lib/firm-scope";
 import type { SignFlowStore, StoreSnapshot } from "./store-types";
 
 function sortByDesc<T>(arr: T[], key: keyof T): T[] {
@@ -11,15 +12,43 @@ export class InMemorySignFlowStore implements SignFlowStore {
   leads = new Map<string, Lead>();
   signingRequests = new Map<string, SigningRequest>();
   signingEvents = new Map<string, SigningEvent>();
-  appSettings: AppSettings | null = null;
+  firms = new Map<string, Firm>();
+  firmSecrets = new Map<string, FirmSecrets>();
+  appSettingsByFirm = new Map<string, AppSettings>();
 
   async snapshot(): Promise<StoreSnapshot> {
     return {
       leads: sortByDesc([...this.leads.values()], "createdAt"),
       signingRequests: sortByDesc([...this.signingRequests.values()], "updatedAt"),
       signingEvents: sortByDesc([...this.signingEvents.values()], "timestamp"),
-      appSettings: this.appSettings,
+      appSettings: this.appSettingsByFirm.get(DEFAULT_FIRM_ID) ?? null,
     };
+  }
+
+  async listFirms(): Promise<Firm[]> {
+    return [...this.firms.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getFirm(id: string): Promise<Firm | null> {
+    return this.firms.get(id) ?? null;
+  }
+
+  async upsertFirm(doc: Firm): Promise<void> {
+    this.firms.set(doc.id, doc);
+  }
+
+  async deleteFirm(id: string): Promise<void> {
+    this.firms.delete(id);
+    this.firmSecrets.delete(id);
+    this.appSettingsByFirm.delete(id);
+  }
+
+  async getFirmSecrets(firmId: string): Promise<FirmSecrets | null> {
+    return this.firmSecrets.get(firmId) ?? null;
+  }
+
+  async upsertFirmSecrets(doc: FirmSecrets): Promise<void> {
+    this.firmSecrets.set(doc.firmId, doc);
   }
 
   async getLead(id: string): Promise<Lead | null> {
@@ -62,9 +91,14 @@ export class InMemorySignFlowStore implements SignFlowStore {
     }
   }
 
-  async findSigningRequestByDocusealSubmissionId(submissionId: number): Promise<SigningRequest | null> {
+  async findSigningRequestByDocusealSubmissionId(
+    submissionId: number,
+    firmId?: string,
+  ): Promise<SigningRequest | null> {
     for (const r of this.signingRequests.values()) {
-      if (r.docusealSubmissionId === submissionId) return r;
+      if (r.docusealSubmissionId !== submissionId) continue;
+      if (firmId && !belongsToFirm(r, firmId)) continue;
+      return r;
     }
     return null;
   }
@@ -80,12 +114,17 @@ export class InMemorySignFlowStore implements SignFlowStore {
     this.signingEvents.set(ev.id, ev);
   }
 
-  async getAppSettings(): Promise<AppSettings | null> {
-    return this.appSettings;
+  async getAppSettings(firmId?: string): Promise<AppSettings | null> {
+    const id = firmId?.trim() || DEFAULT_FIRM_ID;
+    const row = this.appSettingsByFirm.get(id);
+    if (row) return row;
+    if (id === DEFAULT_FIRM_ID) return this.appSettingsByFirm.get(LEGACY_SETTINGS_ID) ?? null;
+    return null;
   }
 
   async upsertAppSettings(doc: AppSettings): Promise<void> {
-    this.appSettings = doc;
+    const id = !doc.id || doc.id === LEGACY_SETTINGS_ID ? DEFAULT_FIRM_ID : doc.id;
+    this.appSettingsByFirm.set(id, { ...doc, id });
   }
 }
 

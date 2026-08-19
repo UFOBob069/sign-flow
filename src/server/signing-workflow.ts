@@ -37,6 +37,8 @@ import { sendSms } from "@/services/quo-service";
 import { appendSigningEvent } from "@/services/signing-events";
 import { isActiveSigningRequest, isCancelledSigningRequest } from "@/lib/signing-request-active";
 import { phonesMatch } from "@/lib/phone";
+import { DEFAULT_FIRM_ID, documentFirmId } from "@/lib/firm-scope";
+import { getFirmDocusealConnection, getFirmQuoConnection } from "@/lib/firms";
 import type { HipaaFormPrefill, Lead, LeadStatus, SigningRequest, SupportedLanguage } from "@/types/models";
 
 export type CreateSigningRequestInput = {
@@ -53,6 +55,8 @@ export type CreateSigningRequestInput = {
   sendEmail: boolean;
   reminderEnabled: boolean;
   assignedTo: string | null;
+  /** Active firm when sending from the dashboard. Defaults to Ramos James. */
+  firmId?: string;
   /**
    * Allow creating the request without any immediate SMS/email delivery — used
    * when the signer will sign inline (e.g. embedded during an intake journey)
@@ -61,18 +65,30 @@ export type CreateSigningRequestInput = {
   allowNoDelivery?: boolean;
 };
 
+async function firmRuntime(firmId: string) {
+  const id = firmId.trim() || DEFAULT_FIRM_ID;
+  const store = getSignFlowStore();
+  const [appSettings, docuseal, quo] = await Promise.all([
+    store.getAppSettings(id),
+    getFirmDocusealConnection(id),
+    getFirmQuoConnection(id),
+  ]);
+  return { firmId: id, appSettings, docuseal, quo };
+}
+
 export async function createLeadAndSigningRequest(
   input: CreateSigningRequestInput,
   actor: { sub: string; name: string },
-): Promise<{ lead: Lead; signingRequest: SigningRequest }> {
+): Promise<{ lead: Lead; signingRequest: SigningRequest; deliveryWarning: string | null }> {
   const store = getSignFlowStore();
-  const appSettings = await store.getAppSettings();
+  const firmId = input.firmId?.trim() || DEFAULT_FIRM_ID;
+  const { appSettings, docuseal, quo } = await firmRuntime(firmId);
   const reminderSchedule = mergeReminderSchedule(appSettings);
   const now = nowIso();
   const leadId = newId("lead");
   const reqId = newId("sig");
 
-  const template = await getTemplate(input.templateId);
+  const template = await getTemplate(input.templateId, docuseal);
   const formKind = detectSigningFormKind(template.name);
 
   if (templateRequiresDateOfLoss(template.name) && !input.dateOfLoss?.trim()) {
@@ -96,6 +112,7 @@ export async function createLeadAndSigningRequest(
 
   const lead: Lead = {
     id: leadId,
+    firmId,
     clientName,
     phone: input.phone?.trim() || null,
     email: input.email?.trim() || null,
@@ -124,17 +141,19 @@ export async function createLeadAndSigningRequest(
     sendDocusealEmail: false,
     sendDocusealSms: false,
     prefillFields,
+    conn: docuseal,
   });
 
   const primary = submitters[0];
   if (!primary?.submission_id) throw new Error("DocuSeal did not return a submission id.");
 
-  const signingUrl = normalizeDocusealPublicUrl(primary.embed_src ?? null, primary.slug);
+  const signingUrl = normalizeDocusealPublicUrl(primary.embed_src ?? null, primary.slug, docuseal);
   const sentAtIso = nowIso();
   const sentDate = new Date(sentAtIso);
 
   const signingRequest: SigningRequest = {
     id: reqId,
+    firmId,
     leadId,
     clientName: lead.clientName,
     phone: lead.phone,
@@ -192,13 +211,27 @@ export async function createLeadAndSigningRequest(
     metadata: { actor: actor.sub, templateId: input.templateId },
   });
 
+  let deliveryWarning: string | null = null;
+
   if (input.sendSms && lead.phone) {
-    await sendSms(
-      lead.phone,
-      signingSmsFromSettings(appSettings, lead.clientName, signingUrl, language),
-    );
-    signingRequest.sentViaSms = true;
-    await appendSigningEvent({ signingRequestId: reqId, leadId, type: "sms_sent", metadata: {} });
+    try {
+      await sendSms(
+        lead.phone,
+        signingSmsFromSettings(appSettings, lead.clientName, signingUrl, language),
+        quo,
+      );
+      signingRequest.sentViaSms = true;
+      await appendSigningEvent({ signingRequestId: reqId, leadId, type: "sms_sent", metadata: {} });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      deliveryWarning = error;
+      await appendSigningEvent({
+        signingRequestId: reqId,
+        leadId,
+        type: "failed",
+        metadata: { step: "signing_sms", error },
+      });
+    }
   }
 
   if (input.sendEmail && lead.email) {
@@ -214,7 +247,7 @@ export async function createLeadAndSigningRequest(
     await appendSigningEvent({ signingRequestId: reqId, leadId, type: "email_sent", metadata: {} });
   }
 
-  if (!input.allowNoDelivery && !signingRequest.sentViaSms && !signingRequest.sentViaEmail) {
+  if (!input.allowNoDelivery && !signingRequest.sentViaSms && !signingRequest.sentViaEmail && !deliveryWarning) {
     throw new Error("Select at least one delivery method (SMS or email).");
   }
 
@@ -226,7 +259,7 @@ export async function createLeadAndSigningRequest(
 
   if (isOneTimeTemplate(template.name)) {
     try {
-      await archiveTemplate(input.templateId);
+      await archiveTemplate(input.templateId, docuseal);
       await appendSigningEvent({
         signingRequestId: reqId,
         leadId,
@@ -243,7 +276,7 @@ export async function createLeadAndSigningRequest(
     }
   }
 
-  return { lead, signingRequest };
+  return { lead, signingRequest, deliveryWarning };
 }
 
 export async function cancelSigningRequest(
@@ -370,7 +403,8 @@ export async function purgeSigningRequest(signingRequestId: string): Promise<voi
 }
 
 export async function repairStoredDocusealUrls(req: SigningRequest): Promise<SigningRequest> {
-  const fixed = normalizeSigningRequestDocusealUrls(req);
+  const conn = await getFirmDocusealConnection(documentFirmId(req));
+  const fixed = normalizeSigningRequestDocusealUrls(req, conn);
   if (
     fixed.signingUrl !== req.signingUrl ||
     fixed.signedPdfUrl !== req.signedPdfUrl ||
@@ -387,12 +421,12 @@ export async function resendSigningNotifications(
   opts: { sms?: boolean; email?: boolean },
 ): Promise<SigningRequest> {
   const store = getSignFlowStore();
-  const appSettings = await store.getAppSettings();
-  const outbound = mergeOutboundDelivery(appSettings);
   const raw = await store.getSigningRequest(signingRequestId);
   const req = raw ? await repairStoredDocusealUrls(raw) : null;
   if (!req?.signingUrl) throw new Error("Signing request not found or missing URL.");
   if (!isActiveSigningRequest(req)) throw new Error("This signing request was cancelled.");
+  const { appSettings, quo } = await firmRuntime(documentFirmId(req));
+  const outbound = mergeOutboundDelivery(appSettings);
 
   if (opts.sms && !outbound.signingSmsEnabled) {
     throw new Error("SMS for signing requests is turned off in Admin → Messages.");
@@ -406,6 +440,7 @@ export async function resendSigningNotifications(
     await sendSms(
       req.phone,
       signingSmsFromSettings(appSettings, req.clientName, req.signingUrl, req.language),
+      quo,
     );
     await appendSigningEvent({ signingRequestId, leadId: req.leadId, type: "sms_sent", metadata: { resend: true } });
   }
@@ -487,16 +522,17 @@ export async function syncSigningRequestFromDocuseal(signingRequestId: string): 
   if (!isActiveSigningRequest(req)) throw new Error("This signing request was cancelled.");
   if (req.docusealSubmissionId == null) throw new Error("No DocuSeal submission id on this request.");
 
-  const raw = await getSubmission(req.docusealSubmissionId);
+  const raw = await getSubmission(req.docusealSubmissionId, await getFirmDocusealConnection(documentFirmId(req)));
   if (!submissionIsCompleted(raw)) {
     throw new Error("DocuSeal submission is not completed yet.");
   }
 
+  const conn = await getFirmDocusealConnection(documentFirmId(req));
   const { pdf, audit } = extractSubmissionDocumentUrls(raw);
   await applyDocusealCompletionToRequest({
     signingRequestId: req.id,
-    signedPdfUrl: normalizeDocusealPublicUrl(pdf),
-    auditCertificateUrl: normalizeDocusealPublicUrl(audit),
+    signedPdfUrl: normalizeDocusealPublicUrl(pdf, undefined, conn),
+    auditCertificateUrl: normalizeDocusealPublicUrl(audit, undefined, conn),
     source: "sync",
   });
 
@@ -568,13 +604,13 @@ export async function applyDocusealCompletionToRequest(input: {
     metadata: { source: input.source ?? "docuseal" },
   });
 
-  const appSettings = await store.getAppSettings();
+  const { appSettings, quo } = await firmRuntime(documentFirmId(req));
   const completionSettings = mergeCompletionNotifications(appSettings);
   const documentUrl = req.signedPdfUrl ?? req.signingUrl ?? "";
 
   if (completionSettings.thankYouSmsEnabled && req.phone?.trim()) {
     try {
-      await sendSms(req.phone, thankYouSmsFromSettings(appSettings, req.clientName, req.language));
+      await sendSms(req.phone, thankYouSmsFromSettings(appSettings, req.clientName, req.language), quo);
       await appendSigningEvent({
         signingRequestId: req.id,
         leadId: req.leadId,
@@ -691,9 +727,9 @@ export async function applyDocusealCompletionToRequest(input: {
   }
 }
 
-export async function markSigningViewedFromWebhook(submissionId: number): Promise<void> {
+export async function markSigningViewedFromWebhook(submissionId: number, firmId?: string): Promise<void> {
   const store = getSignFlowStore();
-  const req = await store.findSigningRequestByDocusealSubmissionId(submissionId);
+  const req = await store.findSigningRequestByDocusealSubmissionId(submissionId, firmId);
   if (!req || !isActiveSigningRequest(req)) return;
   if (req.status === "viewed" || req.status === "completed" || req.status === "signed") return;
   if (req.status === "sent") {
@@ -721,7 +757,7 @@ export async function runReminderForRequest(
     return null;
   }
   const store = getSignFlowStore();
-  const appSettings = await store.getAppSettings();
+  const { appSettings, quo } = await firmRuntime(documentFirmId(req));
   const outbound = mergeOutboundDelivery(appSettings);
   const reminderSchedule = mergeReminderSchedule(appSettings);
   if (req.reminderCount >= reminderSchedule.maxAutoReminders) {
@@ -765,6 +801,7 @@ export async function runReminderForRequest(
       await sendSms(
         req.phone,
         reminderSmsFromSettings(appSettings, req.clientName, req.signingUrl, req.language),
+        quo,
       );
       smsSent = true;
       await appendSigningEvent({

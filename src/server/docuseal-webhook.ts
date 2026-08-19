@@ -3,6 +3,8 @@ import { isActiveSigningRequest } from "@/lib/signing-request-active";
 import { applyDocusealCompletionToRequest, markSigningViewedFromWebhook } from "@/server/signing-workflow";
 import { getSignFlowStore } from "@/lib/db";
 import { appendSigningEvent } from "@/services/signing-events";
+import { documentFirmId } from "@/lib/firm-scope";
+import { getFirmDocusealConnection } from "@/lib/firms";
 import {
   extractCompletionUrlsFromWebhookData,
   extractDocusealSubmissionId,
@@ -13,15 +15,20 @@ function asObj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-export function isDocusealWebhookAuthorized(req: Request): boolean {
-  const secret = process.env.DOCUSEAL_WEBHOOK_SECRET?.trim();
-  if (!secret) return true;
+function webhookHeaderMatches(req: Request, secret: string): boolean {
   const a = req.headers.get("x-docuseal-secret")?.trim();
   const b = req.headers.get("x-webhook-secret")?.trim();
   return a === secret || b === secret;
 }
 
-export async function processDocusealWebhookJson(payload: unknown): Promise<void> {
+export async function isDocusealWebhookAuthorized(req: Request, firmId?: string): Promise<boolean> {
+  const secrets = firmId ? await getSignFlowStore().getFirmSecrets(firmId) : null;
+  const secret = secrets?.docusealWebhookSecret?.trim() || process.env.DOCUSEAL_WEBHOOK_SECRET?.trim();
+  if (!secret) return true;
+  return webhookHeaderMatches(req, secret);
+}
+
+export async function processDocusealWebhookJson(payload: unknown, firmId?: string): Promise<void> {
   const root = asObj(payload);
   if (!root) {
     console.warn("[docuseal-webhook] ignored: payload is not an object");
@@ -42,30 +49,30 @@ export async function processDocusealWebhookJson(payload: unknown): Promise<void
   }
 
   if (eventType === "form.viewed" || eventType === "form.started") {
-    await markSigningViewedFromWebhook(submissionId);
+    await markSigningViewedFromWebhook(submissionId, firmId);
     return;
   }
 
+  const store = getSignFlowStore();
+  const req = await store.findSigningRequestByDocusealSubmissionId(submissionId, firmId);
+  const conn = req ? await getFirmDocusealConnection(documentFirmId(req)) : undefined;
+
   if (isDocusealCompletionEvent(eventType)) {
-    const store = getSignFlowStore();
-    const req = await store.findSigningRequestByDocusealSubmissionId(submissionId);
     if (!req || !isActiveSigningRequest(req)) {
-      console.warn("[docuseal-webhook] no active signing request for submission", { submissionId, eventType });
+      console.warn("[docuseal-webhook] no active signing request for submission", { submissionId, eventType, firmId });
       return;
     }
 
     const { pdf, audit } = extractCompletionUrlsFromWebhookData(data);
     await applyDocusealCompletionToRequest({
       signingRequestId: req.id,
-      signedPdfUrl: normalizeDocusealPublicUrl(pdf),
-      auditCertificateUrl: normalizeDocusealPublicUrl(audit),
+      signedPdfUrl: normalizeDocusealPublicUrl(pdf, undefined, conn),
+      auditCertificateUrl: normalizeDocusealPublicUrl(audit, undefined, conn),
     });
     return;
   }
 
   if (eventType === "form.declined") {
-    const store = getSignFlowStore();
-    const req = await store.findSigningRequestByDocusealSubmissionId(submissionId);
     if (!req || !isActiveSigningRequest(req)) return;
 
     req.status = "failed";
@@ -76,13 +83,12 @@ export async function processDocusealWebhookJson(payload: unknown): Promise<void
       leadId: req.leadId,
       type: "failed",
       metadata: { eventType, reason: "declined" },
+      firmId: req.firmId,
     });
     return;
   }
 
   if (eventType === "submission.expired") {
-    const store = getSignFlowStore();
-    const req = await store.findSigningRequestByDocusealSubmissionId(submissionId);
     if (!req || !isActiveSigningRequest(req)) return;
     req.status = "expired";
     req.reminderEnabled = false;
@@ -94,6 +100,7 @@ export async function processDocusealWebhookJson(payload: unknown): Promise<void
       leadId: req.leadId,
       type: "failed",
       metadata: { eventType },
+      firmId: req.firmId,
     });
   }
 }

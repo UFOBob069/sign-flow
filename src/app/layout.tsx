@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sign Flow — Ramos James Law",
+  title: "Sign Flow",
   description: "Personal injury lead signing — DocuSeal, Quo SMS, and Dropbox.",
 };
 

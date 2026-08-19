@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession, requireSigningRequestInFirm } from "@/lib/auth/firm-session";
 import { normalizeSigningRequestForDisplay } from "@/lib/signing-request-active";
 import { resendSigningNotifications } from "@/server/signing-workflow";
 
@@ -10,8 +10,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -26,6 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "Enable at least one of sms or email." }, { status: 400 });
   }
   try {
+    await requireSigningRequestInFirm(id, firmId);
     const item = normalizeSigningRequestForDisplay(await resendSigningNotifications(id, { sms, email }));
     return NextResponse.json({ item });
   } catch (e) {

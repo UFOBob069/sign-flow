@@ -34,6 +34,7 @@ const schema = z.object({
   language: z.enum(["en", "es"]),
   templateId: z.coerce.number().int().positive(),
   source: z.string().optional(),
+  firmId: z.string().optional(),
   dateOfLoss: z
     .preprocess((v) => (v === "" || v === null || v === undefined ? null : v), z.string().optional())
     .nullable()
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
   const d = parsed.data;
 
   try {
-    const { lead, signingRequest } = await createLeadAndSigningRequest(
+    const { lead, signingRequest, deliveryWarning } = await createLeadAndSigningRequest(
       {
         clientName: d.clientName?.trim() || "",
         phone: d.phone?.trim() || null,
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
         reminderEnabled: d.reminderEnabled,
         assignedTo: null,
         allowNoDelivery: true,
+        firmId: d.firmId?.trim() || undefined,
       },
       { sub: "intake-engine", name: "Intake Engine" },
     );
@@ -76,6 +78,7 @@ export async function POST(req: Request) {
       signingRequestId: signingRequest.id,
       leadId: lead.id,
       signingUrl: signingRequest.signingUrl,
+      ...(deliveryWarning ? { warning: deliveryWarning } : {}),
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 400 });

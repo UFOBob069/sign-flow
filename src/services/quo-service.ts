@@ -8,10 +8,21 @@ export type SendSmsResult = {
 };
 
 const PN_ID = /^PN[a-zA-Z0-9]+$/;
+const QUO_MESSAGES_URL = "https://api.openphone.com/v1/messages";
+const SMS_ATTEMPTS = 2;
+const SMS_TIMEOUT_MS = 15_000;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 524]);
+
+export type QuoConnection = {
+  apiKey?: string | null;
+  fromNumber?: string | null;
+  phoneNumberId?: string | null;
+};
 
 /** True when real SMS can be sent (API key + from number or phone number id). */
-export function isQuoSmsConfigured(): boolean {
-  return Boolean(process.env.QUO_API_KEY?.trim() && resolveQuoFrom()?.from);
+export function isQuoSmsConfigured(conn?: QuoConnection): boolean {
+  const apiKey = conn?.apiKey?.trim() || process.env.QUO_API_KEY?.trim();
+  return Boolean(apiKey && resolveQuoFrom(conn)?.from);
 }
 
 function quoSmsMockEnabled(): boolean {
@@ -26,15 +37,15 @@ function toE164(raw: string): string | null {
 }
 
 /** Quo accepts `from` as E.164 or phone number id (PN…). */
-function resolveQuoFrom(): { from: string; label: string } | null {
-  const phoneNumberId = process.env.QUO_PHONE_NUMBER_ID?.trim();
+function resolveQuoFrom(conn?: QuoConnection): { from: string; label: string } | null {
+  const phoneNumberId = conn?.phoneNumberId?.trim() || process.env.QUO_PHONE_NUMBER_ID?.trim();
   if (phoneNumberId) {
     const id = phoneNumberId.startsWith("PN") ? phoneNumberId : `PN${phoneNumberId}`;
     if (!PN_ID.test(id)) return null;
     return { from: id, label: "QUO_PHONE_NUMBER_ID" };
   }
 
-  const raw = process.env.QUO_FROM_NUMBER?.trim();
+  const raw = conn?.fromNumber?.trim() || process.env.QUO_FROM_NUMBER?.trim();
   if (!raw) return null;
   if (PN_ID.test(raw) || raw.startsWith("PN")) return { from: raw.startsWith("PN") ? raw : `PN${raw}`, label: "QUO_FROM_NUMBER" };
 
@@ -50,7 +61,29 @@ type QuoErrorBody = {
   description?: string;
 };
 
+function looksLikeHtml(text: string): boolean {
+  const t = text.trimStart().slice(0, 200).toLowerCase();
+  return t.startsWith("<!doctype") || t.startsWith("<html") || t.includes("<html");
+}
+
+function gatewayTimeoutMessage(status: number): string {
+  return (
+    `Quo (OpenPhone) timed out (HTTP ${status}). This is usually a temporary outage on their side — ` +
+    "wait a moment and retry SMS from the request page. Do not send the contract again."
+  );
+}
+
 function formatQuoFailure(status: number, text: string, fromLabel: string): string {
+  if (status === 502 || status === 503 || status === 504 || status === 524 || looksLikeHtml(text)) {
+    if (status === 504 || status === 524 || /gateway time-?out/i.test(text)) {
+      return gatewayTimeoutMessage(status);
+    }
+    return (
+      `Quo (OpenPhone) is temporarily unavailable (HTTP ${status}). ` +
+      "Wait a moment and retry SMS from the request page."
+    );
+  }
+
   let detail = text.slice(0, 900);
   try {
     const j = JSON.parse(text) as QuoErrorBody;
@@ -76,9 +109,18 @@ function formatQuoFailure(status: number, text: string, fromLabel: string): stri
   return detail;
 }
 
-export async function sendSms(toRaw: string, body: string): Promise<SendSmsResult> {
-  const apiKey = process.env.QUO_API_KEY?.trim();
-  const resolved = resolveQuoFrom();
+function isAbortTimeout(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === "TimeoutError" || e.name === "AbortError" || /aborted|timeout/i.test(e.message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function sendSms(toRaw: string, body: string, conn?: QuoConnection): Promise<SendSmsResult> {
+  const apiKey = conn?.apiKey?.trim() || process.env.QUO_API_KEY?.trim();
+  const resolved = resolveQuoFrom(conn);
   const userId = process.env.QUO_USER_ID?.trim();
 
   if (!apiKey || !resolved) {
@@ -105,26 +147,48 @@ export async function sendSms(toRaw: string, body: string): Promise<SendSmsResul
   };
   if (userId) payload.userId = userId;
 
-  const res = await fetch("https://api.openphone.com/v1/messages", {
-    method: "POST",
-    headers: { Authorization: apiKey, "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= SMS_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(QUO_MESSAGES_URL, {
+        method: "POST",
+        headers: { Authorization: apiKey, "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(SMS_TIMEOUT_MS),
+      });
+    } catch (e) {
+      lastError = isAbortTimeout(e)
+        ? new Error(gatewayTimeoutMessage(504))
+        : new Error(`Quo SMS failed: ${e instanceof Error ? e.message : String(e)}`);
+      if (attempt < SMS_ATTEMPTS && isAbortTimeout(e)) {
+        await sleep(1000 * attempt);
+        continue;
+      }
+      throw lastError;
+    }
 
-  if (!res.ok) {
+    if (res.ok) {
+      const json = (await res.json()) as {
+        data?: { id?: string; status?: string; to?: string[] };
+      };
+      const data = json.data;
+      return {
+        sid: String(data?.id ?? ""),
+        status: String(data?.status ?? "queued"),
+        body,
+        to: data?.to?.[0] ?? to,
+      };
+    }
+
     const text = await res.text();
-    const detail = formatQuoFailure(res.status, text, resolved.label);
-    throw new Error(`Quo SMS failed (HTTP ${res.status}): ${detail}`);
+    lastError = new Error(`Quo SMS failed (HTTP ${res.status}): ${formatQuoFailure(res.status, text, resolved.label)}`);
+    if (attempt < SMS_ATTEMPTS && RETRYABLE_STATUS.has(res.status)) {
+      await sleep(1000 * attempt);
+      continue;
+    }
+    throw lastError;
   }
 
-  const json = (await res.json()) as {
-    data?: { id?: string; status?: string; to?: string[] };
-  };
-  const data = json.data;
-  return {
-    sid: String(data?.id ?? ""),
-    status: String(data?.status ?? "queued"),
-    body,
-    to: data?.to?.[0] ?? to,
-  };
+  throw lastError ?? new Error("Quo SMS failed.");
 }

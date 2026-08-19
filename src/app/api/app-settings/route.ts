@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSignFlowStore } from "@/lib/db";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession } from "@/lib/auth/firm-session";
 import { nowIso } from "@/lib/time";
 import type { AppSettings } from "@/types/models";
 import { isGmailWorkspaceDelegationConfigured } from "@/services/gmail-workspace-dwd";
@@ -9,6 +9,7 @@ import { DEFAULT_COMMUNICATION_TEMPLATES } from "@/lib/messaging";
 import { DEFAULT_REMINDER_SCHEDULE } from "@/lib/reminder-schedule";
 import { DEFAULT_COMPLETION_NOTIFICATIONS } from "@/lib/completion-notifications";
 import { DEFAULT_OUTBOUND_DELIVERY, mergeOutboundDelivery } from "@/lib/outbound-delivery";
+import { getFirmDocusealConnection, getFirmQuoConnection } from "@/lib/firms";
 
 const communicationTemplatesPatchSchema = z
   .object({
@@ -71,23 +72,25 @@ const patchSchema = z.object({
 });
 
 export async function GET() {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const store = getSignFlowStore();
-  const existing = await store.getAppSettings();
+  const existing = await store.getAppSettings(firmId);
   const item = existing
     ? { ...existing, outboundDelivery: mergeOutboundDelivery(existing) }
     : null;
+  const [docuseal, quo] = await Promise.all([getFirmDocusealConnection(firmId), getFirmQuoConnection(firmId)]);
   return NextResponse.json({
     item,
     env: {
-      hasDocusealApiKey: Boolean(process.env.DOCUSEAL_API_KEY),
-      hasDocusealApiUrl: Boolean(process.env.DOCUSEAL_API_URL),
-      hasDocusealWebhookSecret: Boolean(process.env.DOCUSEAL_WEBHOOK_SECRET),
-      hasDocusealAdminBase: Boolean(process.env.DOCUSEAL_ADMIN_BASE_URL),
+      hasDocusealApiKey: Boolean(docuseal.apiKey?.trim() || process.env.DOCUSEAL_API_KEY),
+      hasDocusealApiUrl: Boolean(docuseal.apiUrl?.trim() || process.env.DOCUSEAL_API_URL),
+      hasDocusealWebhookSecret: Boolean(docuseal.webhookSecret?.trim() || process.env.DOCUSEAL_WEBHOOK_SECRET),
+      hasDocusealAdminBase: Boolean(docuseal.adminBaseUrl?.trim() || process.env.DOCUSEAL_ADMIN_BASE_URL),
       hasFirebaseWebAuth:
         Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY) &&
         Boolean(process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) &&
@@ -96,8 +99,13 @@ export async function GET() {
       hasGoogleClientId: Boolean(process.env.GOOGLE_CLIENT_ID),
       hasGoogleClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
       hasSignFlowSessionSecret: Boolean(process.env.SIGNFLOW_SESSION_SECRET),
-      hasQuoApiKey: Boolean(process.env.QUO_API_KEY),
-      hasQuoFromNumber: Boolean(process.env.QUO_FROM_NUMBER || process.env.QUO_PHONE_NUMBER_ID),
+      hasQuoApiKey: Boolean(quo?.apiKey?.trim() || process.env.QUO_API_KEY),
+      hasQuoFromNumber: Boolean(
+        quo?.fromNumber?.trim() ||
+          quo?.phoneNumberId?.trim() ||
+          process.env.QUO_FROM_NUMBER ||
+          process.env.QUO_PHONE_NUMBER_ID,
+      ),
       hasGmailWorkspaceDelegation: isGmailWorkspaceDelegationConfigured(),
       hasSendgrid: Boolean(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL),
       hasGmailUserOAuth: Boolean(process.env.GOOGLE_REFRESH_TOKEN && process.env.GOOGLE_EMAIL_FROM),
@@ -107,8 +115,9 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -118,9 +127,9 @@ export async function PATCH(req: Request) {
 
   const store = getSignFlowStore();
   const existing =
-    (await store.getAppSettings()) ??
+    (await store.getAppSettings(firmId)) ??
     ({
-      id: "default",
+      id: firmId,
       docusealConfigured: false,
       smsConfigured: false,
       dropboxConfigured: false,
@@ -140,7 +149,7 @@ export async function PATCH(req: Request) {
   const updated: AppSettings = {
     ...existing,
     ...flagPatches,
-    id: "default",
+    id: firmId,
     updatedAt: nowIso(),
   };
 

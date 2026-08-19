@@ -172,8 +172,8 @@ export default function SendContractPage() {
             setError(j?.error ?? "Request failed");
             return;
           }
-          const j = (await res.json()) as { item: { id: string } };
-          router.push(`/dashboard/requests/${j.item.id}`);
+          const j = (await res.json()) as { item: { id: string }; warning?: string };
+          router.push(j.warning ? `/dashboard/requests/${j.item.id}?sms=failed` : `/dashboard/requests/${j.item.id}`);
         }}
       >
         <div>

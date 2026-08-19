@@ -4,6 +4,7 @@ import { AppShell } from "@/components/sign-flow/app-shell";
 const links = [
   { href: "/admin/messages", label: "Messages & reminders" },
   { href: "/admin/templates", label: "DocuSeal templates" },
+  { href: "/admin/firms", label: "Firms" },
   { href: "/admin/settings", label: "Environment" },
 ];
 

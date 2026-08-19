@@ -4,7 +4,7 @@ import { useEffect, useState, startTransition } from "react";
 
 type SettingsResponse = {
   item: {
-    id: "default";
+    id: string;
     docusealConfigured: boolean;
     smsConfigured: boolean;
     dropboxConfigured: boolean;

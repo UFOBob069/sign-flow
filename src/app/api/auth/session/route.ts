@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuth } from "firebase-admin/auth";
 import { getFirebaseAdminApp } from "@/lib/firebase/admin-app";
+import { emailIsFirmMember } from "@/lib/firms";
 import { isStaffEmailAllowed } from "@/lib/auth/email-allowlist";
 import { signSessionToken, getSessionCookieName } from "@/lib/auth/session";
 
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Google sign-in did not return an email address" }, { status: 400 });
   }
 
-  if (!isStaffEmailAllowed(email)) {
+  if (!isStaffEmailAllowed(email) && !(await emailIsFirmMember(email))) {
     return NextResponse.json({ error: "This account is not authorized for Sign Flow" }, { status: 403 });
   }
 

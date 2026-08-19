@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession } from "@/lib/auth/firm-session";
 import { listTemplateDocuments } from "@/services/docuseal-client";
+import { getFirmDocusealConnection } from "@/lib/firms";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -14,7 +16,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "Invalid template id" }, { status: 400 });
   }
   try {
-    const json = await listTemplateDocuments(templateId);
+    const json = await listTemplateDocuments(templateId, await getFirmDocusealConnection(firmId));
     return NextResponse.json(json);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load documents";

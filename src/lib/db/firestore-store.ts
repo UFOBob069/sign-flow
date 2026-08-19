@@ -1,6 +1,7 @@
 import { getFirestore, type Firestore, type CollectionReference } from "firebase-admin/firestore";
 import { getFirebaseAdminApp } from "@/lib/firebase/admin-app";
-import type { AppSettings, Lead, SigningEvent, SigningRequest } from "@/types/models";
+import { DEFAULT_FIRM_ID, LEGACY_SETTINGS_ID, belongsToFirm } from "@/lib/firm-scope";
+import type { AppSettings, Firm, FirmSecrets, Lead, SigningEvent, SigningRequest } from "@/types/models";
 import type { SignFlowStore, StoreSnapshot } from "./store-types";
 
 function col<T extends Record<string, unknown>>(db: Firestore, name: string): CollectionReference<T> {
@@ -30,6 +31,38 @@ export class FirestoreSignFlowStore implements SignFlowStore {
   private async allSigningEvents(): Promise<SigningEvent[]> {
     const snap = await this.db.collection("signingEvents").orderBy("timestamp", "desc").limit(500).get();
     return snap.docs.map((d) => d.data() as SigningEvent);
+  }
+
+  async listFirms(): Promise<Firm[]> {
+    const snap = await col<Firm>(this.db, "firms").get();
+    const rows = snap.docs.map((d) => d.data() as Firm);
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  }
+
+  async getFirm(id: string): Promise<Firm | null> {
+    const doc = await col<Firm>(this.db, "firms").doc(id).get();
+    return doc.exists ? (doc.data() as Firm) : null;
+  }
+
+  async upsertFirm(doc: Firm): Promise<void> {
+    await col<Firm>(this.db, "firms").doc(doc.id).set(doc, { merge: true });
+  }
+
+  async deleteFirm(id: string): Promise<void> {
+    const batch = this.db.batch();
+    batch.delete(col<Firm>(this.db, "firms").doc(id));
+    batch.delete(col<FirmSecrets>(this.db, "firmSecrets").doc(id));
+    await batch.commit();
+  }
+
+  async getFirmSecrets(firmId: string): Promise<FirmSecrets | null> {
+    const doc = await col<FirmSecrets>(this.db, "firmSecrets").doc(firmId).get();
+    return doc.exists ? (doc.data() as FirmSecrets) : null;
+  }
+
+  async upsertFirmSecrets(doc: FirmSecrets): Promise<void> {
+    await col<FirmSecrets>(this.db, "firmSecrets").doc(doc.firmId).set(doc, { merge: true });
   }
 
   async getLead(id: string): Promise<Lead | null> {
@@ -89,14 +122,19 @@ export class FirestoreSignFlowStore implements SignFlowStore {
     await batch.commit();
   }
 
-  async findSigningRequestByDocusealSubmissionId(submissionId: number): Promise<SigningRequest | null> {
+  async findSigningRequestByDocusealSubmissionId(
+    submissionId: number,
+    firmId?: string,
+  ): Promise<SigningRequest | null> {
     const snap = await this.db
       .collection("signingRequests")
       .where("docusealSubmissionId", "==", submissionId)
-      .limit(1)
+      .limit(20)
       .get();
     if (snap.empty) return null;
-    return snap.docs[0]!.data() as SigningRequest;
+    const rows = snap.docs.map((d) => d.data() as SigningRequest);
+    if (firmId) return rows.find((r) => belongsToFirm(r, firmId)) ?? null;
+    return rows[0] ?? null;
   }
 
   async listSigningEventsForRequest(signingRequestId: string): Promise<SigningEvent[]> {
@@ -113,13 +151,22 @@ export class FirestoreSignFlowStore implements SignFlowStore {
     await col<SigningEvent>(this.db, "signingEvents").doc(ev.id).set(ev);
   }
 
-  async getAppSettings(): Promise<AppSettings | null> {
-    const doc = await col<AppSettings>(this.db, "appSettings").doc("default").get();
-    return doc.exists ? (doc.data() as AppSettings) : null;
+  async getAppSettings(firmId?: string): Promise<AppSettings | null> {
+    const id = firmId?.trim() || DEFAULT_FIRM_ID;
+    const doc = await col<AppSettings>(this.db, "appSettings").doc(id).get();
+    if (doc.exists) {
+      return { ...(doc.data() as AppSettings), id };
+    }
+    if (id === DEFAULT_FIRM_ID) {
+      const legacy = await col<AppSettings>(this.db, "appSettings").doc(LEGACY_SETTINGS_ID).get();
+      if (legacy.exists) return { ...(legacy.data() as AppSettings), id: DEFAULT_FIRM_ID };
+    }
+    return null;
   }
 
   async upsertAppSettings(doc: AppSettings): Promise<void> {
-    await col<AppSettings>(this.db, "appSettings").doc("default").set(doc, { merge: true });
+    const id = !doc.id || doc.id === LEGACY_SETTINGS_ID ? DEFAULT_FIRM_ID : doc.id;
+    await col<AppSettings>(this.db, "appSettings").doc(id).set({ ...doc, id }, { merge: true });
   }
 }
 

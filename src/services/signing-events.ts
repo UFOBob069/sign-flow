@@ -7,10 +7,12 @@ export async function appendSigningEvent(input: {
   leadId: string;
   type: SigningEventType;
   metadata?: Record<string, unknown>;
+  firmId?: string | null;
 }): Promise<SigningEvent> {
   const store = getSignFlowStore();
   const ev: SigningEvent = {
     id: newId("evt"),
+    firmId: input.firmId ?? null,
     signingRequestId: input.signingRequestId,
     leadId: input.leadId,
     type: input.type,

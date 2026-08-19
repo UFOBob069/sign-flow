@@ -1,23 +1,27 @@
 import { NextResponse } from "next/server";
 import { getSignFlowStore } from "@/lib/db";
-import { requireSessionUser } from "@/lib/auth/get-session";
+import { requireFirmSession } from "@/lib/auth/firm-session";
 import { nowIso } from "@/lib/time";
 import type { AppSettings } from "@/types/models";
 import { isGmailWorkspaceDelegationConfigured } from "@/services/gmail-workspace-dwd";
+import { DEFAULT_FIRM_ID } from "@/lib/firm-scope";
+import { ensureDefaultFirm } from "@/lib/firms";
 
 export async function POST() {
+  let firmId: string;
   try {
-    await requireSessionUser();
+    ({ firmId } = await requireFirmSession());
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const store = getSignFlowStore();
   const results: string[] = [];
+  await ensureDefaultFirm();
 
-  if (!(await store.getAppSettings())) {
+  if (!(await store.getAppSettings(firmId))) {
     const settings: AppSettings = {
-      id: "default",
+      id: firmId || DEFAULT_FIRM_ID,
       docusealConfigured: Boolean(process.env.DOCUSEAL_API_KEY),
       smsConfigured: Boolean(
         process.env.QUO_API_KEY && (process.env.QUO_FROM_NUMBER || process.env.QUO_PHONE_NUMBER_ID),

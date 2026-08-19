@@ -1,8 +1,37 @@
 /**
- * Firestore-aligned domain types for Sign Flow (Ramos James Law).
+ * Firestore-aligned domain types for Sign Flow.
  * DocuSeal is the system of record for templates, signing sessions, and signed PDFs.
- * Firestore tracks lead workflow, signing request state, reminders, and communication history.
+ * Firestore tracks firms, lead workflow, signing request state, reminders, and communication history.
  */
+
+/** Staff-facing firm (no secrets). Ramos James is seeded as `ramos-james`. */
+export type Firm = {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  /**
+   * Emails and/or domains that may switch to this firm.
+   * Empty on the default firm = all logged-in staff.
+   * Empty on any other firm = global admins only.
+   */
+  memberEmails: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Server-only per-firm integration credentials. Never sent to the browser. */
+export type FirmSecrets = {
+  firmId: string;
+  docusealApiUrl: string | null;
+  docusealApiKey: string | null;
+  docusealAdminBaseUrl: string | null;
+  docusealWebhookSecret: string | null;
+  quoApiKey: string | null;
+  quoFromNumber: string | null;
+  quoPhoneNumberId: string | null;
+  updatedAt: string;
+};
 
 export type SupportedLanguage = "en" | "es";
 
@@ -10,6 +39,8 @@ export type LeadStatus = "new" | "signing_sent" | "signed" | "archived" | "lost"
 
 export type Lead = {
   id: string;
+  /** Missing on legacy Ramos James rows — treated as the default firm. */
+  firmId?: string | null;
   clientName: string;
   phone: string | null;
   email: string | null;
@@ -76,6 +107,8 @@ export type HipaaFormPrefill = {
 
 export type SigningRequest = {
   id: string;
+  /** Missing on legacy Ramos James rows — treated as the default firm. */
+  firmId?: string | null;
   leadId: string;
   clientName: string;
   phone: string | null;
@@ -123,6 +156,7 @@ export type SigningRequest = {
 
 export type SigningEvent = {
   id: string;
+  firmId?: string | null;
   signingRequestId: string;
   leadId: string;
   type: SigningEventType;
@@ -193,7 +227,8 @@ export type ReminderScheduleSettings = {
 };
 
 export type AppSettings = {
-  id: "default";
+  /** Firm id. Legacy singleton used `"default"` (mapped to Ramos James). */
+  id: string;
   docusealConfigured: boolean;
   smsConfigured: boolean;
   dropboxConfigured: boolean;
