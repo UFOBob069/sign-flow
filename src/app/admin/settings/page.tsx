@@ -93,15 +93,18 @@ export default function AdminSettingsPage() {
       <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm">
         <div className="text-sm font-semibold text-slate-900">Quo SMS webhooks (STOP)</div>
         <p className="mt-2 text-sm text-slate-700">
-          Point a Quo <code className="rounded bg-slate-100 px-1 text-xs">message.received</code> webhook to:{" "}
-          <code className="rounded bg-slate-100 px-1 text-xs">https://your-host/api/webhooks/quo</code>
+          Shared Quo workspace: point <code className="rounded bg-slate-100 px-1 text-xs">message.received</code> to{" "}
+          <code className="rounded bg-slate-100 px-1 text-xs">https://your-host/api/webhooks/quo</code> and set{" "}
+          <code className="rounded bg-slate-100 px-1 text-xs">QUO_WEBHOOK_SECRET</code> in env.
+        </p>
+        <p className="mt-2 text-sm text-slate-700">
+          Separate Quo account per firm: use the firm-specific URL shown under Admin → Firms (e.g.{" "}
+          <code className="rounded bg-slate-100 px-1 text-xs">/api/webhooks/quo/&#123;firmId&#125;</code>) and store that
+          account’s signing secret on the firm.
         </p>
         <p className="mt-2 text-xs text-slate-600">
           When a client replies <strong>STOP</strong> (or Spanish <strong>ALTO</strong>), Sign Flow turns off automated
-          reminders only — the signing link stays active. Optional: set <code>QUO_WEBHOOK_SECRET</code> to the signing
-          secret Quo shows when you create the webhook (often starts with <code>whsec_</code>; paste it exactly either
-          way). Also update SMS templates under Messages if they still say “opt out” without explaining the link stays
-          active.
+          reminders only — the signing link stays active.
         </p>
       </div>
 

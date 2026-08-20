@@ -30,6 +30,8 @@ export type FirmSecrets = {
   quoApiKey: string | null;
   quoFromNumber: string | null;
   quoPhoneNumberId: string | null;
+  /** Quo/OpenPhone webhook signing secret (whsec_…) for this firm’s STOP webhook. */
+  quoWebhookSecret: string | null;
   updatedAt: string;
 };
 

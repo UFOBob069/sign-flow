@@ -5,6 +5,9 @@ export const DEFAULT_FIRM_ID = "ramos-james";
 export const FIRM_COOKIE = "signflow_firm";
 export const LEGACY_SETTINGS_ID = "default";
 
+/** Sent from Admin → Firms Clear buttons; PATCH treats this as wipe (blank keeps stored value). */
+export const CLEAR_FIRM_SECRET = "__CLEAR__";
+
 export function defaultFirmRecord(now: string): Firm {
   return {
     id: DEFAULT_FIRM_ID,
@@ -27,6 +30,7 @@ export function emptyFirmSecrets(firmId: string, now: string): FirmSecrets {
     quoApiKey: null,
     quoFromNumber: null,
     quoPhoneNumberId: null,
+    quoWebhookSecret: null,
     updatedAt: now,
   };
 }

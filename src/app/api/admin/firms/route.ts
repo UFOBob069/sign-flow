@@ -33,6 +33,7 @@ const createSchema = z.object({
   quoApiKey: z.string().optional().nullable(),
   quoFromNumber: z.string().optional().nullable(),
   quoPhoneNumberId: z.string().optional().nullable(),
+  quoWebhookSecret: z.string().optional().nullable(),
 });
 
 export async function GET() {
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
     quoApiKey: parsed.data.quoApiKey?.trim() || null,
     quoFromNumber: parsed.data.quoFromNumber?.trim() || null,
     quoPhoneNumberId: parsed.data.quoPhoneNumberId?.trim() || null,
+    quoWebhookSecret: parsed.data.quoWebhookSecret?.trim() || null,
   };
   await store.upsertFirmSecrets(secrets);
 

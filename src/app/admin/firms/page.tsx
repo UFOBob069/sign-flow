@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, startTransition } from "react";
-import { DEFAULT_FIRM_ID } from "@/lib/firm-scope";
+import { CLEAR_FIRM_SECRET, DEFAULT_FIRM_ID } from "@/lib/firm-scope";
 
 type FirmPublic = {
   id: string;
@@ -20,6 +20,7 @@ type FirmPublic = {
   hasDocusealApiKey: boolean;
   hasDocusealWebhookSecret: boolean;
   hasQuoApiKey: boolean;
+  hasQuoWebhookSecret: boolean;
 };
 
 const emptyForm = {
@@ -33,6 +34,7 @@ const emptyForm = {
   quoApiKey: "",
   quoFromNumber: "",
   quoPhoneNumberId: "",
+  quoWebhookSecret: "",
 };
 
 function formFromFirm(f: FirmPublic) {
@@ -40,15 +42,14 @@ function formFromFirm(f: FirmPublic) {
     name: f.name,
     logoUrl: f.logoUrl ?? "",
     memberEmails: f.memberEmails.join("\n"),
-    // Non-secret connection fields reload from the server.
     docusealApiUrl: f.docusealApiUrl ?? "",
     docusealAdminBaseUrl: f.docusealAdminBaseUrl ?? "",
     quoFromNumber: f.quoFromNumber ?? "",
     quoPhoneNumberId: f.quoPhoneNumberId ?? "",
-    // Secrets are never returned — leave blank; blank on save keeps the stored value.
     docusealApiKey: "",
     docusealWebhookSecret: "",
     quoApiKey: "",
+    quoWebhookSecret: "",
   };
 }
 
@@ -80,6 +81,29 @@ export default function AdminFirmsPage() {
     });
   }
 
+  async function clearSecret(field: "docusealWebhookSecret" | "quoWebhookSecret", label: string) {
+    if (selectedId === "new") return;
+    if (!confirm(`Clear the saved ${label} for this firm?`)) return;
+    setBusy(true);
+    setError(null);
+    setOk(null);
+    const res = await fetch(`/api/admin/firms/${selectedId}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ [field]: CLEAR_FIRM_SECRET }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      setError(typeof j?.error === "string" ? j.error : "Clear failed");
+      return;
+    }
+    setOk(`${label} cleared.`);
+    setForm((f) => ({ ...f, [field]: "" }));
+    await load();
+  }
+
   useEffect(() => {
     setOrigin(window.location.origin);
     void load();
@@ -96,12 +120,18 @@ export default function AdminFirmsPage() {
   }, [selectedId, items]);
 
   const selected = items.find((x) => x.id === selectedId);
-  const webhookPath =
+  const docusealWebhookPath =
     selectedId === "new"
       ? ""
       : selectedId === DEFAULT_FIRM_ID
         ? `${origin}/api/webhooks/docuseal`
         : `${origin}/api/webhooks/docuseal/${selectedId}`;
+  const quoWebhookPath =
+    selectedId === "new"
+      ? ""
+      : selectedId === DEFAULT_FIRM_ID
+        ? `${origin}/api/webhooks/quo`
+        : `${origin}/api/webhooks/quo/${selectedId}`;
 
   if (forbidden) {
     return (
@@ -171,6 +201,7 @@ export default function AdminFirmsPage() {
               quoApiKey: form.quoApiKey.trim() || null,
               quoFromNumber: form.quoFromNumber.trim() || null,
               quoPhoneNumberId: form.quoPhoneNumberId.trim() || null,
+              quoWebhookSecret: form.quoWebhookSecret.trim() || null,
             };
             const res =
               selectedId === "new"
@@ -274,25 +305,37 @@ export default function AdminFirmsPage() {
               placeholder="https://docuseal.otherfirm.com"
             />
             <label className="mt-3 block text-sm font-medium text-slate-900">Webhook secret</label>
-            <input
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              type="password"
-              autoComplete="off"
-              value={form.docusealWebhookSecret}
-              onChange={(e) => setForm((f) => ({ ...f, docusealWebhookSecret: e.target.value }))}
-              placeholder={
-                selected?.hasDocusealWebhookSecret
-                  ? "Saved — leave blank to keep, or paste a new secret"
-                  : ""
-              }
-            />
+            <div className="mt-1 flex flex-wrap gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                type="password"
+                autoComplete="off"
+                value={form.docusealWebhookSecret}
+                onChange={(e) => setForm((f) => ({ ...f, docusealWebhookSecret: e.target.value }))}
+                placeholder={
+                  selected?.hasDocusealWebhookSecret
+                    ? "Saved — leave blank to keep, or paste a new secret"
+                    : ""
+                }
+              />
+              {selectedId !== "new" && selected?.hasDocusealWebhookSecret ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => void clearSecret("docusealWebhookSecret", "DocuSeal webhook secret")}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
             {selected?.hasDocusealWebhookSecret ? (
               <p className="mt-1 text-xs text-emerald-700">Webhook secret is saved for this firm.</p>
             ) : null}
-            {webhookPath ? (
+            {docusealWebhookPath ? (
               <p className="mt-3 text-xs text-slate-600">
                 Point this firm’s DocuSeal webhook to{" "}
-                <code className="break-all rounded bg-slate-100 px-1 text-[11px]">{webhookPath}</code>
+                <code className="break-all rounded bg-slate-100 px-1 text-[11px]">{docusealWebhookPath}</code>
               </p>
             ) : null}
           </div>
@@ -332,6 +375,44 @@ export default function AdminFirmsPage() {
               onChange={(e) => setForm((f) => ({ ...f, quoPhoneNumberId: e.target.value }))}
               placeholder="PN…"
             />
+            <label className="mt-3 block text-sm font-medium text-slate-900">Quo webhook secret (STOP)</label>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Required when this firm uses its own Quo workspace. Paste the signing secret Quo shows when you create the
+              webhook (often <code className="text-[11px]">whsec_…</code>).
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                type="password"
+                autoComplete="off"
+                value={form.quoWebhookSecret}
+                onChange={(e) => setForm((f) => ({ ...f, quoWebhookSecret: e.target.value }))}
+                placeholder={
+                  selected?.hasQuoWebhookSecret
+                    ? "Saved — leave blank to keep, or paste a new secret"
+                    : ""
+                }
+              />
+              {selectedId !== "new" && selected?.hasQuoWebhookSecret ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => void clearSecret("quoWebhookSecret", "Quo webhook secret")}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            {selected?.hasQuoWebhookSecret ? (
+              <p className="mt-1 text-xs text-emerald-700">Quo webhook secret is saved for this firm.</p>
+            ) : null}
+            {quoWebhookPath ? (
+              <p className="mt-3 text-xs text-slate-600">
+                Point this firm’s Quo <code className="text-[11px]">message.received</code> webhook to{" "}
+                <code className="break-all rounded bg-slate-100 px-1 text-[11px]">{quoWebhookPath}</code>
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">

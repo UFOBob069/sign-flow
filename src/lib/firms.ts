@@ -84,6 +84,7 @@ export type FirmPublic = {
   hasDocusealApiKey: boolean;
   hasDocusealWebhookSecret: boolean;
   hasQuoApiKey: boolean;
+  hasQuoWebhookSecret: boolean;
 };
 
 export function firmSecretsConfigured(secrets: FirmSecrets | null): {
@@ -98,6 +99,7 @@ export function firmSecretsConfigured(secrets: FirmSecrets | null): {
   hasDocusealApiKey: boolean;
   hasDocusealWebhookSecret: boolean;
   hasQuoApiKey: boolean;
+  hasQuoWebhookSecret: boolean;
 } {
   const hasFirmDocuseal = Boolean(secrets?.docusealApiKey?.trim());
   const hasEnvDocuseal = Boolean(process.env.DOCUSEAL_API_KEY?.trim());
@@ -119,6 +121,7 @@ export function firmSecretsConfigured(secrets: FirmSecrets | null): {
     hasDocusealApiKey: hasFirmDocuseal,
     hasDocusealWebhookSecret: Boolean(secrets?.docusealWebhookSecret?.trim()),
     hasQuoApiKey: Boolean(secrets?.quoApiKey?.trim()),
+    hasQuoWebhookSecret: Boolean(secrets?.quoWebhookSecret?.trim()),
   };
 }
 

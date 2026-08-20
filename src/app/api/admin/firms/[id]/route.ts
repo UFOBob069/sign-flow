@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireFirmSession } from "@/lib/auth/firm-session";
 import { getSignFlowStore } from "@/lib/db";
 import { nowIso } from "@/lib/time";
-import { DEFAULT_FIRM_ID } from "@/lib/firm-scope";
+import { DEFAULT_FIRM_ID, CLEAR_FIRM_SECRET } from "@/lib/firm-scope";
 import { emptyFirmSecrets, parseMemberEmails, toFirmPublic } from "@/lib/firms";
 import type { FirmSecrets } from "@/types/models";
 
@@ -16,6 +16,7 @@ async function requireAdmin() {
 const keep = (incoming: string | null | undefined, current: string | null): string | null => {
   if (incoming == null) return current;
   const t = incoming.trim();
+  if (t === CLEAR_FIRM_SECRET) return null;
   if (!t || t === "********") return current;
   return t;
 };
@@ -31,6 +32,7 @@ const patchSchema = z.object({
   quoApiKey: z.string().optional().nullable(),
   quoFromNumber: z.string().optional().nullable(),
   quoPhoneNumberId: z.string().optional().nullable(),
+  quoWebhookSecret: z.string().optional().nullable(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -68,6 +70,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     quoApiKey: keep(parsed.data.quoApiKey, existing.quoApiKey),
     quoFromNumber: keep(parsed.data.quoFromNumber, existing.quoFromNumber),
     quoPhoneNumberId: keep(parsed.data.quoPhoneNumberId, existing.quoPhoneNumberId),
+    quoWebhookSecret: keep(parsed.data.quoWebhookSecret, existing.quoWebhookSecret ?? null),
     updatedAt: now,
   };
   await store.upsertFirmSecrets(secrets);

@@ -4,13 +4,14 @@ import { isQuoWebhookAuthorized, processQuoWebhookJson } from "@/server/quo-webh
 export const dynamic = "force-dynamic";
 
 /**
- * Shared Quo / OpenPhone inbound message webhook (env secret / default workspace).
- * Configure `message.received` → https://your-host/api/webhooks/quo
- * Per-firm Quo accounts should use `/api/webhooks/quo/{firmId}` instead.
+ * Per-firm Quo / OpenPhone inbound webhook.
+ * Configure `message.received` → https://your-host/api/webhooks/quo/{firmId}
+ * Store that Quo account’s signing secret on the firm (Admin → Firms).
  */
-export async function POST(req: Request) {
+export async function POST(req: Request, ctx: { params: Promise<{ firmId: string }> }) {
+  const { firmId } = await ctx.params;
   const rawBody = await req.text();
-  if (!(await isQuoWebhookAuthorized(req, rawBody))) {
+  if (!(await isQuoWebhookAuthorized(req, rawBody, firmId))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await processQuoWebhookJson(json);
+    const result = await processQuoWebhookJson(json, firmId);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "webhook error";

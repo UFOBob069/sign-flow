@@ -359,7 +359,7 @@ export async function stopRemindersForRequest(
 export async function stopRemindersByPhone(
   fromPhone: string,
   source: StopRemindersSource,
-  meta?: { messageBody?: string },
+  meta?: { messageBody?: string; firmId?: string },
 ): Promise<SigningRequest[]> {
   const store = getSignFlowStore();
   const items = await store.listSigningRequests();
@@ -368,7 +368,8 @@ export async function stopRemindersByPhone(
       isActiveSigningRequest(r) &&
       r.reminderEnabled &&
       (r.status === "sent" || r.status === "viewed" || r.status === "draft") &&
-      phonesMatch(r.phone, fromPhone),
+      phonesMatch(r.phone, fromPhone) &&
+      (!meta?.firmId || documentFirmId(r) === meta.firmId),
   );
 
   const updated: SigningRequest[] = [];

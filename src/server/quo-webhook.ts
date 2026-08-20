@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { getSignFlowStore } from "@/lib/db";
+import { DEFAULT_FIRM_ID } from "@/lib/firm-scope";
 import { isSmsStopKeyword } from "@/lib/phone";
 import { stopRemindersByPhone } from "@/server/signing-workflow";
 
@@ -19,8 +21,18 @@ export type QuoMessageReceivedPayload = {
   };
 };
 
-function getSigningKey(): string | null {
+function getEnvSigningKey(): string | null {
   return process.env.QUO_WEBHOOK_SECRET?.trim() || process.env.QUO_WEBHOOK_KEY?.trim() || null;
+}
+
+async function resolveSigningKey(firmId?: string): Promise<string | null> {
+  const tryIds = firmId ? [firmId] : [DEFAULT_FIRM_ID];
+  for (const id of tryIds) {
+    const secrets = await getSignFlowStore().getFirmSecrets(id);
+    const firmKey = secrets?.quoWebhookSecret?.trim() || null;
+    if (firmKey) return firmKey;
+  }
+  return getEnvSigningKey();
 }
 
 function hmacKeyCandidates(secret: string): Buffer[] {
@@ -58,12 +70,16 @@ function hmacKeyCandidates(secret: string): Buffer[] {
  * Verify Quo/OpenPhone webhook signature (Svix-style).
  * signed payload = `${webhook-id}.${webhook-timestamp}.${rawBody}`
  *
- * Set QUO_WEBHOOK_SECRET (or QUO_WEBHOOK_KEY) to the signing secret Quo shows when
- * you create the webhook. Official keys are usually `whsec_…`; plain secrets without
- * that prefix are also accepted.
+ * Firm webhooks: use that firm’s Quo webhook secret, else env.
+ * Shared `/api/webhooks/quo`: env `QUO_WEBHOOK_SECRET` / `QUO_WEBHOOK_KEY`.
+ * If no secret is configured, requests are accepted (open) so local/dev still works.
  */
-export function isQuoWebhookAuthorized(req: Request, rawBody: string): boolean {
-  const secret = getSigningKey();
+export async function isQuoWebhookAuthorized(
+  req: Request,
+  rawBody: string,
+  firmId?: string,
+): Promise<boolean> {
+  const secret = await resolveSigningKey(firmId);
   if (!secret) return true;
 
   const webhookId = req.headers.get("webhook-id") ?? "";
@@ -111,8 +127,12 @@ function messageBody(obj: NonNullable<QuoMessageReceivedPayload["data"]>["object
 /**
  * Process Quo message events. Only `message.received` with STOP keywords
  * disable reminders; signing links stay active.
+ * When `firmId` is set (per-firm webhook URL), only that firm’s requests are matched.
  */
-export async function processQuoWebhookJson(payload: unknown): Promise<{
+export async function processQuoWebhookJson(
+  payload: unknown,
+  firmId?: string,
+): Promise<{
   handled: boolean;
   stopped: number;
   reason?: string;
@@ -142,6 +162,9 @@ export async function processQuoWebhookJson(payload: unknown): Promise<{
   const from = msg.from?.trim();
   if (!from) return { handled: false, stopped: 0, reason: "missing_from" };
 
-  const updated = await stopRemindersByPhone(from, "client_sms_stop", { messageBody: text });
+  const updated = await stopRemindersByPhone(from, "client_sms_stop", {
+    messageBody: text,
+    firmId,
+  });
   return { handled: true, stopped: updated.length };
 }
