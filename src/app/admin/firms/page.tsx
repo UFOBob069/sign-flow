@@ -13,6 +13,13 @@ type FirmPublic = {
   quoConfigured: boolean;
   usesEnvDocuseal: boolean;
   usesEnvQuo: boolean;
+  docusealApiUrl: string | null;
+  docusealAdminBaseUrl: string | null;
+  quoFromNumber: string | null;
+  quoPhoneNumberId: string | null;
+  hasDocusealApiKey: boolean;
+  hasDocusealWebhookSecret: boolean;
+  hasQuoApiKey: boolean;
 };
 
 const emptyForm = {
@@ -27,6 +34,23 @@ const emptyForm = {
   quoFromNumber: "",
   quoPhoneNumberId: "",
 };
+
+function formFromFirm(f: FirmPublic) {
+  return {
+    name: f.name,
+    logoUrl: f.logoUrl ?? "",
+    memberEmails: f.memberEmails.join("\n"),
+    // Non-secret connection fields reload from the server.
+    docusealApiUrl: f.docusealApiUrl ?? "",
+    docusealAdminBaseUrl: f.docusealAdminBaseUrl ?? "",
+    quoFromNumber: f.quoFromNumber ?? "",
+    quoPhoneNumberId: f.quoPhoneNumberId ?? "",
+    // Secrets are never returned — leave blank; blank on save keeps the stored value.
+    docusealApiKey: "",
+    docusealWebhookSecret: "",
+    quoApiKey: "",
+  };
+}
 
 export default function AdminFirmsPage() {
   const [items, setItems] = useState<FirmPublic[]>([]);
@@ -68,18 +92,7 @@ export default function AdminFirmsPage() {
     }
     const f = items.find((x) => x.id === selectedId);
     if (!f) return;
-    setForm({
-      name: f.name,
-      logoUrl: f.logoUrl ?? "",
-      memberEmails: f.memberEmails.join("\n"),
-      docusealApiUrl: "",
-      docusealApiKey: "",
-      docusealAdminBaseUrl: "",
-      docusealWebhookSecret: "",
-      quoApiKey: "",
-      quoFromNumber: "",
-      quoPhoneNumberId: "",
-    });
+    setForm(formFromFirm(f));
   }, [selectedId, items]);
 
   const selected = items.find((x) => x.id === selectedId);
@@ -180,7 +193,11 @@ export default function AdminFirmsPage() {
               return;
             }
             const j = (await res.json()) as { item: FirmPublic };
-            setOk(selectedId === "new" ? "Firm created." : "Firm saved.");
+            setOk(
+              selectedId === "new"
+                ? "Firm created."
+                : "Firm saved. API keys stay hidden after reload — leave those fields blank to keep the stored values.",
+            );
             await load();
             setSelectedId(j.item.id);
           }}
@@ -222,10 +239,10 @@ export default function AdminFirmsPage() {
           <div className="border-t border-slate-100 pt-4">
             <div className="text-sm font-semibold text-slate-900">DocuSeal</div>
             <p className="mt-1 text-xs text-slate-500">
-              {selected?.usesEnvDocuseal
-                ? "Currently using the shared DOCUSEAL_* environment variables. Paste this firm’s own API URL and key to connect a separate DocuSeal."
-                : selected?.docusealConfigured
-                  ? "This firm has its own DocuSeal credentials. Leave key fields blank to keep the stored secret."
+              {selected?.hasDocusealApiKey
+                ? "This firm has a stored DocuSeal API key. Leave key/secret fields blank to keep them."
+                : selected?.usesEnvDocuseal
+                  ? "Currently using the shared DOCUSEAL_* environment variables. Paste this firm’s own API URL and key to connect a separate DocuSeal."
                   : "Add this firm’s DocuSeal API URL and key."}
             </p>
             <label className="mt-3 block text-sm font-medium text-slate-900">API URL</label>
@@ -242,8 +259,13 @@ export default function AdminFirmsPage() {
               autoComplete="off"
               value={form.docusealApiKey}
               onChange={(e) => setForm((f) => ({ ...f, docusealApiKey: e.target.value }))}
-              placeholder={selected?.docusealConfigured ? "•••••••• (leave blank to keep)" : ""}
+              placeholder={
+                selected?.hasDocusealApiKey ? "Saved — leave blank to keep, or paste a new key" : ""
+              }
             />
+            {selected?.hasDocusealApiKey ? (
+              <p className="mt-1 text-xs text-emerald-700">API key is saved for this firm.</p>
+            ) : null}
             <label className="mt-3 block text-sm font-medium text-slate-900">Admin / signing URL</label>
             <input
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
@@ -258,8 +280,15 @@ export default function AdminFirmsPage() {
               autoComplete="off"
               value={form.docusealWebhookSecret}
               onChange={(e) => setForm((f) => ({ ...f, docusealWebhookSecret: e.target.value }))}
-              placeholder={selected?.docusealConfigured ? "•••••••• (leave blank to keep)" : ""}
+              placeholder={
+                selected?.hasDocusealWebhookSecret
+                  ? "Saved — leave blank to keep, or paste a new secret"
+                  : ""
+              }
             />
+            {selected?.hasDocusealWebhookSecret ? (
+              <p className="mt-1 text-xs text-emerald-700">Webhook secret is saved for this firm.</p>
+            ) : null}
             {webhookPath ? (
               <p className="mt-3 text-xs text-slate-600">
                 Point this firm’s DocuSeal webhook to{" "}
@@ -271,9 +300,11 @@ export default function AdminFirmsPage() {
           <div className="border-t border-slate-100 pt-4">
             <div className="text-sm font-semibold text-slate-900">SMS (optional)</div>
             <p className="mt-1 text-xs text-slate-500">
-              {selected?.usesEnvQuo
-                ? "Using the shared Quo number until you add this firm’s own API key and from-number."
-                : "Leave blank to keep the stored number, or to fall back to env."}
+              {selected?.hasQuoApiKey
+                ? "This firm has a stored Quo API key. Leave the key blank to keep it. From number reloads below."
+                : selected?.usesEnvQuo
+                  ? "Using the shared Quo number until you add this firm’s own API key and from-number."
+                  : "Add this firm’s Quo API key and from-number, or leave blank to use env."}
             </p>
             <label className="mt-3 block text-sm font-medium text-slate-900">Quo API key</label>
             <input
@@ -282,13 +313,24 @@ export default function AdminFirmsPage() {
               autoComplete="off"
               value={form.quoApiKey}
               onChange={(e) => setForm((f) => ({ ...f, quoApiKey: e.target.value }))}
+              placeholder={selected?.hasQuoApiKey ? "Saved — leave blank to keep, or paste a new key" : ""}
             />
+            {selected?.hasQuoApiKey ? (
+              <p className="mt-1 text-xs text-emerald-700">Quo API key is saved for this firm.</p>
+            ) : null}
             <label className="mt-3 block text-sm font-medium text-slate-900">From number (E.164)</label>
             <input
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
               value={form.quoFromNumber}
               onChange={(e) => setForm((f) => ({ ...f, quoFromNumber: e.target.value }))}
               placeholder="+1…"
+            />
+            <label className="mt-3 block text-sm font-medium text-slate-900">Phone number ID (optional)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              value={form.quoPhoneNumberId}
+              onChange={(e) => setForm((f) => ({ ...f, quoPhoneNumberId: e.target.value }))}
+              placeholder="PN…"
             />
           </div>
 

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="7" fill="#0d1b3e"/>
+  <!-- Fountain pen body -->
+  <path
+    fill="#d13682"
+    d="M18.9 5.2c.5-.5 1.3-.5 1.8 0l2.1 2.1c.5.5.5 1.3 0 1.8L12.2 19.7l-3.2.6c-.4.1-.7-.3-.6-.6l.6-3.2L18.9 5.2Z"
+  />
+  <!-- Grip / section ring -->
+  <path
+    stroke="#0d1b3e"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    d="M14.2 13.4 16.6 15.8"
+    opacity="0.45"
+  />
+  <!-- Nib -->
+  <path
+    fill="#d13682"
+    d="M9.4 17.1 7.2 24.2c-.15.5.35.85.75.55l6.5-4.1-4.05-3.55Z"
+  />
+  <!-- Nib center line -->
+  <path
+    stroke="#0d1b3e"
+    stroke-width="1"
+    stroke-linecap="round"
+    d="M9.9 18.2 8.2 22.8"
+    opacity="0.7"
+  />
+</svg>

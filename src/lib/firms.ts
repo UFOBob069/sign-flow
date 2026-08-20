@@ -75,6 +75,15 @@ export type FirmPublic = {
   quoConfigured: boolean;
   usesEnvDocuseal: boolean;
   usesEnvQuo: boolean;
+  /** Non-secret connection fields — safe to show in Admin → Firms. */
+  docusealApiUrl: string | null;
+  docusealAdminBaseUrl: string | null;
+  quoFromNumber: string | null;
+  quoPhoneNumberId: string | null;
+  /** True when a firm-specific secret is stored (value never returned). */
+  hasDocusealApiKey: boolean;
+  hasDocusealWebhookSecret: boolean;
+  hasQuoApiKey: boolean;
 };
 
 export function firmSecretsConfigured(secrets: FirmSecrets | null): {
@@ -82,6 +91,13 @@ export function firmSecretsConfigured(secrets: FirmSecrets | null): {
   quoConfigured: boolean;
   usesEnvDocuseal: boolean;
   usesEnvQuo: boolean;
+  docusealApiUrl: string | null;
+  docusealAdminBaseUrl: string | null;
+  quoFromNumber: string | null;
+  quoPhoneNumberId: string | null;
+  hasDocusealApiKey: boolean;
+  hasDocusealWebhookSecret: boolean;
+  hasQuoApiKey: boolean;
 } {
   const hasFirmDocuseal = Boolean(secrets?.docusealApiKey?.trim());
   const hasEnvDocuseal = Boolean(process.env.DOCUSEAL_API_KEY?.trim());
@@ -96,6 +112,13 @@ export function firmSecretsConfigured(secrets: FirmSecrets | null): {
     quoConfigured: hasFirmQuo || hasEnvQuo,
     usesEnvDocuseal: !hasFirmDocuseal && hasEnvDocuseal,
     usesEnvQuo: !hasFirmQuo && hasEnvQuo,
+    docusealApiUrl: secrets?.docusealApiUrl?.trim() || null,
+    docusealAdminBaseUrl: secrets?.docusealAdminBaseUrl?.trim() || null,
+    quoFromNumber: secrets?.quoFromNumber?.trim() || null,
+    quoPhoneNumberId: secrets?.quoPhoneNumberId?.trim() || null,
+    hasDocusealApiKey: hasFirmDocuseal,
+    hasDocusealWebhookSecret: Boolean(secrets?.docusealWebhookSecret?.trim()),
+    hasQuoApiKey: Boolean(secrets?.quoApiKey?.trim()),
   };
 }
 
