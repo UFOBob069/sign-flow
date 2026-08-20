@@ -16,7 +16,10 @@ import type { HipaaFormPrefill, SigningFormKind, SupportedLanguage } from "@/typ
 export type { HipaaFormPrefill };
 export { validateHipaaPrefill, hipaaClientDisplayName };
 
-/** DocuSeal field names on "Contract Ramos James Law ENGLISH 2026" (and variants). */
+/**
+ * DocuSeal field names on English 2026 intake contracts
+ * (Ramos James, Trucking Chicas, and any firm using the same field layout).
+ */
 export const RJL_ENGLISH_2026_FIELD = {
   clientName: "client name",
   dolDayNumber: "dol day number",
@@ -26,7 +29,10 @@ export const RJL_ENGLISH_2026_FIELD = {
   signature: "signature",
 } as const;
 
-/** DocuSeal field names on "Contract Ramos James Law SPANISH 2026" (and variants). */
+/**
+ * DocuSeal field names on Spanish 2026 intake contracts
+ * (same layout across firms; signature may be named "signature" or "Signature Field 1").
+ */
 export const RJL_SPANISH_2026_FIELD = {
   clientName: "client name",
   dateOfLoss: "date of loss",
@@ -47,18 +53,30 @@ const SIGNER_ONLY_FIELDS_LOWER = new Set(
     RJL_ENGLISH_2026_FIELD.signature,
     RJL_SPANISH_2026_FIELD.signature,
     SAR_RELEASE_FIELD.signature,
+    "signature field 1",
     ...HIPAA_SIGNER_ONLY_LOWER,
   ].map((n) => n.toLowerCase()),
 );
 
-export function isRjlEnglish2026Template(templateName: string): boolean {
-  if (isDeprecatedDocusealTemplate(templateName)) return false;
-  return /ramos james law english 2026/i.test(templateName);
+function isNonContractPrefillTemplate(templateName: string): boolean {
+  return (
+    isDeprecatedDocusealTemplate(templateName) ||
+    isSarReleaseTemplate(templateName) ||
+    isDisbursementTemplate(templateName) ||
+    /\bhipaa\b/i.test(templateName)
+  );
 }
 
+/** English 2026 contract layout (client name + dol day/month year + today). Any firm. */
+export function isRjlEnglish2026Template(templateName: string): boolean {
+  if (isNonContractPrefillTemplate(templateName)) return false;
+  return /\benglish\s+2026\b/i.test(templateName);
+}
+
+/** Spanish 2026 contract layout (client name + date of loss + today month spanish). Any firm. */
 export function isRjlSpanish2026Template(templateName: string): boolean {
-  if (isDeprecatedDocusealTemplate(templateName)) return false;
-  return /ramos james law spanish 2026/i.test(templateName);
+  if (isNonContractPrefillTemplate(templateName)) return false;
+  return /\bspanish\s+2026\b/i.test(templateName);
 }
 
 /** SAR release — template name should include “SAR” (each person has their own DocuSeal template). */
